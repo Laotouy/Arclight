@@ -72,10 +72,9 @@ minecraft = { module = 'com.mojang:minecraft', version.ref = 'minecraft' }
 spigot-api = { module = 'org.spigotmc:spigot-api', version.ref = 'spigot-api' }
 bungeecord-chat = { module = 'net.md-5:bungeecord-chat', version.ref = 'bungeecord-chat-api' }
 snakeyaml = { module = 'org.yaml:snakeyaml', version.ref = 'snakeyaml' }
-mysql-connector-j = { module = 'com.mysql:mysql-connector-j', version.ref = 'mysql-connector-j' }
-
+mysql-connectorj = { module = 'com.mysql:mysql-connector-j', version.ref = 'mysql-connector-j' }
 jline = { module = 'jline:jline', version.ref = 'jline' }
-terminal-console-appender = { module = 'net.minecrell:terminalconsoleappender', version.ref = 'terminal-console-appender' }
+terminalconsoleappender = { module = 'net.minecrell:terminalconsoleappender', version.ref = 'terminal-console-appender' }
 log4j-api = { module = 'org.apache.logging.log4j:log4j-api', version.ref = 'log4j' }
 log4j-core = { module = 'org.apache.logging.log4j:log4j-core', version.ref = 'log4j' }
 log4j-jul = { module = 'org.apache.logging.log4j:log4j-jul', version.ref = 'log4j' }
@@ -85,7 +84,7 @@ izzel-tools = { module = 'io.izzel:tools', version.ref = 'izzel-tools' }
 mixin-tools = { module = 'io.izzel.arclight:mixin-tools', version.ref = 'mixin-tools' }
 
 # platforms (arclight-forge, arclight-fabric, arclight-neoforge)
-forge = { module = 'net.minecraftforge:forge', version.ref = 'full_forge' }
+forge = { module = 'net.minecraftforge:forge', version.ref = 'full-forge' }
 fabric-loader = { module = 'net.fabricmc:fabric-loader', version.ref = 'fabric-loader' }
 fabric-api = { module = 'net.fabricmc.fabric-api:fabric-api', version.ref = 'fabric-api' }
 fabric-permissions-api = { module ='me.lucko:fabric-permissions-api', version.ref = 'fabric-permissions-api' }
@@ -104,3 +103,5 @@ sponge-mixin = { module = 'org.spongepowered:mixin', version.ref = 'mixin' }
 asm = ['asm-commons', 'asm-tree', 'asm-util']
 lorenz = ['lorenz-core', 'lorenz-proguard', 'lorenz-tiny']
 log4j = ['log4j-api', 'log4j-core', 'log4j-jul']
+spigot-shade = ['spigot-api', 'bungeecord-chat']
+spigot-runtime = ['spigot-api', 'snakeyaml', 'mysql-connectorj', 'bungeecord-chat']
