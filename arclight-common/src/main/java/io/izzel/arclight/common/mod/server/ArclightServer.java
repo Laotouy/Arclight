@@ -96,6 +96,8 @@ public class ArclightServer {
                 BukkitRegistry.registerAll(console);
                 org.spigotmc.SpigotConfig.init(new File("./spigot.yml"));
                 org.spigotmc.SpigotConfig.registerCommands();
+                // 注册 Arclight 插件管理命令
+                ArclightPluginCommand.registerCommand();
                 if (VelocitySupport.isEnabled()) {
                     SpigotConfig.bungee = true;
                 }
