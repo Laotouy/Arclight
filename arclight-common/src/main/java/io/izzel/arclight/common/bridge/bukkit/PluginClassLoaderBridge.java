@@ -10,4 +10,5 @@ public interface PluginClassLoaderBridge {
     Class<?> arclight$loadFromExternal(String name, boolean initialize, boolean checkLibraries) throws ClassNotFoundException;
     SimplePluginManager arclight$getPluginManager();
     Logger arclight$systemLogger();
+    void arclight$setForceReload(boolean forceReload);
 }

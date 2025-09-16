@@ -22,6 +22,7 @@ import org.bukkit.plugin.java.JavaPluginLoader;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.*;
+import org.spongepowered.asm.mixin.Unique;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,8 +32,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.net.URLConnection;
+import java.security.CodeSigner;
 import java.security.CodeSource;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarFile;
@@ -61,6 +65,8 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
     abstract void initialize(@NotNull JavaPlugin javaPlugin);
 
     private ClassLoaderRemapper remapper;
+    @Unique
+    private volatile boolean arclight$forceReload = false;  // 插件重载标志
 
     @ShadowConstructor.Super
     public void arclight$constructor$super(String name, URL[] urls, ClassLoader parent) {
@@ -81,6 +87,15 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
         this.manifest = this.jar.getManifest();
         this.url = file.toURI().toURL();
         this.libraryLoader = libraryLoader;
+
+        // 检查是否需要启用重载模式
+        String forceReload = System.getProperty("arclight.plugin.forceReload");
+        if ("true".equals(forceReload)) {
+            this.arclight$forceReload = true;
+            // 立即清除属性，避免影响其他插件
+            System.clearProperty("arclight.plugin.forceReload");
+            arclight$systemLogger().info("[Arclight] Plugin " + description.getName() + " loaded with force reload mode enabled");
+        }
 
         Class<?> jarClass;
         try {
@@ -153,6 +168,26 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
         super(urls);
     }
 
+    @Override
+    public void close() throws IOException {
+        if (classes != null) {
+            classes.clear();
+        }
+        if (jar != null) {
+            try {
+                jar.close();
+            } catch (IOException ignored) {
+            }
+        }
+        arclight$forceReload = false;
+        super.close();
+    }
+
+    @Override
+    public void arclight$setForceReload(boolean forceReload) {
+        this.arclight$forceReload = forceReload;
+    }
+
     /**
      * @author InitAuther97
      * @reason add skip super for Adventure
@@ -160,8 +195,8 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
     @Overwrite
     Class<?> loadClass0(String name, boolean resolve, boolean checkGlobal, boolean checkLibraries) throws ClassNotFoundException {
         synchronized (getClassLoadingLock(name)) {
-            // First, check if the class has already been loaded
-            Class<?> c = findLoadedClass(name);
+            // 先检查本地缓存
+            Class<?> c = classes.get(name);
             if (c != null) {
                 if (resolve) resolveClass(c);
                 return c;
@@ -255,7 +290,7 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
 
     /**
      * @author IzzelAliz
-     * @reason
+     * @reason Force read from disk to bypass cache
      */
     @Overwrite
     protected Class<?> findClass(String name) throws ClassNotFoundException {
@@ -266,56 +301,111 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
 
         if (result == null) {
             String path = name.replace('.', '/').concat(".class");
-            URL url = this.findResource(path);
 
-            if (url != null) {
+            // 如果处于重载模式，直接从文件读取
+            try {
+                if (arclight$forceReload) {
+                    // 重载模式：创建新的 ZipFile 实例以确保读取最新内容
+                    arclight$systemLogger().info("[Arclight] Force reload mode active for " + description.getName() + ", loading class: " + name);
+                    try (ZipFile zipFile = new ZipFile(file)) {
+                        ZipEntry entry = zipFile.getEntry(path);
+                        if (entry == null) {
+                            // 在 JAR 中找不到，从父类加载器查找
+                            result = super.findClass(name);
+                            if (result != null) {
+                                ((JavaPluginLoaderBridge) (Object) loader).bridge$setClass(name, result);
+                                classes.put(name, result);
+                            }
+                            return result;
+                        }
 
-                URLConnection connection;
-                Callable<byte[]> byteSource;
-                try {
-                    connection = url.openConnection();
-                    connection.connect();
-                    byteSource = () -> {
-                        try (InputStream is = connection.getInputStream()) {
-                            byte[] classBytes = ByteStreams.toByteArray(is);
+                        // 读取类字节码
+                        byte[] classBytes;
+                        try (InputStream is = zipFile.getInputStream(entry)) {
+                            classBytes = ByteStreams.toByteArray(is);
                             classBytes = ArclightRemapper.SWITCH_TABLE_FIXER.apply(classBytes);
                             classBytes = Bukkit.getUnsafe().processClass(description, path, classBytes);
-                            return classBytes;
                         }
-                    };
-                } catch (IOException e) {
-                    throw new ClassNotFoundException(name, e);
-                }
 
-                Product2<byte[], CodeSource> classBytes = this.getRemapper().remapClass(name, byteSource, connection, ArclightRemapConfig.PLUGIN);
+                        // 准备 remapper 所需参数
+                        final byte[] finalBytes = classBytes;
+                        Callable<byte[]> byteSource = () -> finalBytes;
+                        URLConnection connection = url.openConnection();
+                        Product2<byte[], CodeSource> remappedBytes = this.getRemapper().remapClass(name, byteSource, connection, ArclightRemapConfig.PLUGIN);
 
-                int dot = name.lastIndexOf('.');
-                if (dot != -1) {
-                    String pkgName = name.substring(0, dot);
-                    if (getPackage(pkgName) == null) {
-                        try {
-                            if (manifest != null) {
-                                definePackage(pkgName, manifest, this.url);
-                            } else {
-                                definePackage(pkgName, null, null, null, null, null, null, null);
-                            }
-                        } catch (IllegalArgumentException ex) {
+                        int dot = name.lastIndexOf('.');
+                        if (dot != -1) {
+                            String pkgName = name.substring(0, dot);
                             if (getPackage(pkgName) == null) {
-                                throw new IllegalStateException("Cannot find package " + pkgName);
+                                try {
+                                    if (manifest != null) {
+                                        definePackage(pkgName, manifest, this.url);
+                                    } else {
+                                        definePackage(pkgName, null, null, null, null, null, null, null);
+                                    }
+                                } catch (IllegalArgumentException ex) {
+                                    if (getPackage(pkgName) == null) {
+                                        throw new IllegalStateException("Cannot find package " + pkgName);
+                                    }
+                                }
                             }
                         }
+
+                        result = defineClass(name, remappedBytes._1, 0, remappedBytes._1.length, remappedBytes._2);
+
+                        ((JavaPluginLoaderBridge) (Object) loader).bridge$setClass(name, result);
+                        classes.put(name, result);
                     }
+                } else {
+                    // 正常模式：使用原有的逻辑
+                    URL resourceUrl = this.findResource(path);
+                    if (resourceUrl != null) {
+                        URLConnection connection;
+                        Callable<byte[]> byteSource;
+                        connection = resourceUrl.openConnection();
+                        connection.connect();
+                        byteSource = () -> {
+                            try (InputStream is = connection.getInputStream()) {
+                                byte[] classBytes = ByteStreams.toByteArray(is);
+                                classBytes = ArclightRemapper.SWITCH_TABLE_FIXER.apply(classBytes);
+                                classBytes = Bukkit.getUnsafe().processClass(description, path, classBytes);
+                                return classBytes;
+                            }
+                        };
+
+                        Product2<byte[], CodeSource> classBytes = this.getRemapper().remapClass(name, byteSource, connection, ArclightRemapConfig.PLUGIN);
+
+                        int dot = name.lastIndexOf('.');
+                        if (dot != -1) {
+                            String pkgName = name.substring(0, dot);
+                            if (getPackage(pkgName) == null) {
+                                try {
+                                    if (manifest != null) {
+                                        definePackage(pkgName, manifest, this.url);
+                                    } else {
+                                        definePackage(pkgName, null, null, null, null, null, null, null);
+                                    }
+                                } catch (IllegalArgumentException ex) {
+                                    if (getPackage(pkgName) == null) {
+                                        throw new IllegalStateException("Cannot find package " + pkgName);
+                                    }
+                                }
+                            }
+                        }
+
+                        result = defineClass(name, classBytes._1, 0, classBytes._1.length, classBytes._2);
+                    }
+
+                    if (result == null) {
+                        result = super.findClass(name);
+                    }
+
+                    ((JavaPluginLoaderBridge) (Object) loader).bridge$setClass(name, result);
+                    classes.put(name, result);
                 }
-
-                result = defineClass(name, classBytes._1, 0, classBytes._1.length, classBytes._2);
+            } catch (IOException e) {
+                throw new ClassNotFoundException(name, e);
             }
-
-            if (result == null) {
-                result = super.findClass(name);
-            }
-
-            ((JavaPluginLoaderBridge) (Object) loader).bridge$setClass(name, result);
-            classes.put(name, result);
         }
 
         return result;
