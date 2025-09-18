@@ -39,8 +39,6 @@ allprojects {
         toolchain {
             languageVersion = JavaLanguageVersion.of(21)
         }
-
-        withSourcesJar()
     }
 
     repositories {
@@ -113,17 +111,26 @@ rootProject.ext.subProjects.each { Project p ->
                 parchment("org.parchmentmc.data:parchment-${libs.versions.minecraft.get()}:${libs.versions.parchment.get()}@zip")
             }
         }
+
+        java {
+            withSourcesJar()
+        }
     }
 }
 
 rootProject.ext.platformProjects.each { Project p ->
     configure(p) {
+        apply plugin: 'dev.architectury.loom'
         apply plugin: 'com.gradleup.shadow'
+
+        loom {
+            accessWidenerPath = getRootProject().ext.commonProject.loom.accessWidenerPath
+        }
 
         jar {
             manifest.attributes 'MixinConnector': 'io.izzel.arclight.common.mod.ArclightConnector'
             manifest.attributes 'Implementation-Title': 'Arclight'
-            manifest.attributes 'Implementation-Version': "arclight-${p.loom.platform}-${libs.versions.minecraft.get()}-${project.version}-$gitHash"
+            manifest.attributes 'Implementation-Version': "${p.name}-${libs.versions.minecraft.get()}-${project.version}+$gitHash"
             manifest.attributes 'Implementation-Vendor': 'Arclight Team'
             manifest.attributes 'Implementation-Timestamp': new Date().format("yyyy-MM-dd HH:mm:ss")
         }
@@ -157,7 +164,7 @@ def gitBranch() {
 tasks.register('uploadFiles', UploadFilesTask) {
     mcVersion.set libs.versions.minecraft
     version.set "${project.version}-${project.ext.gitHash}"
-    snapshot.set project.version.toString().endsWith("-SNAPSHOT")
+    snapshot.set project.version.toString().endsWith('-SNAPSHOT')
     gitHash.set project.ext.gitHash
     branch.set gitBranch()
     inputs.files tasks.collect.outputs.files

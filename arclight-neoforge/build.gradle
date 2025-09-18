@@ -9,8 +9,6 @@ architectury {
 }
 
 loom {
-    accessWidenerPath = getRootProject().ext.commonProject.loom.accessWidenerPath
-
     neoForge {
     }
 }
@@ -22,10 +20,8 @@ dependencies {
     implementation libs.arclight.api
     implementation libs.mixin.tools
 
-    implementation(libs.spigot.api) { transitive = false }
-    shadowBundle(libs.spigot.api) { transitive = false }
-    implementation(libs.bungeecord.chat) { transitive = false }
-    shadowBundle(libs.bungeecord.chat) { transitive = false }
+    implementation(libs.bundles.spigot.shade) { transitive = false }
+    shadowBundle(libs.bundles.spigot.shade) { transitive = false }
     implementation rootProject.ext.generatedSpigot
     shadowBundle rootProject.ext.generatedSpigot
 
