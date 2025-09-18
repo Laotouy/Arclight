@@ -2,6 +2,7 @@ package io.izzel.arclight.common.bridge.core.server;
 
 import net.minecraft.commands.Commands;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.TimeSource;
 import net.minecraft.world.level.ForcedChunksSavedData;
 import net.minecraft.world.level.Level;
 import org.bukkit.command.ConsoleCommandSender;
@@ -49,4 +50,6 @@ public interface MinecraftServerBridge {
     default void bridge$forge$lockRegistries() {}
 
     default void bridge$forge$unlockRegistries() {}
+
+    void arclight$extendNextTickTimeTo(TimeSource.NanoTimeSource timeSource);
 }

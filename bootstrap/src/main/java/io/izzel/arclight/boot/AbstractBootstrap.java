@@ -25,6 +25,14 @@ import java.util.stream.Collectors;
 
 public interface AbstractBootstrap {
 
+    /**
+     * This runs the CommandNode hook hack and Gson enum hack.
+     * A friendly version for CommandNode hook hack can be found in Sinytra Connector support,
+     * which uses Mixin to do the same thing.
+     * @see io.izzel.arclight.neoforge.mixin.compat.connector.CommandNodeMixin
+     * @throws Exception the injection fails due to various reasons and cannot proceed to boot.
+     */
+    @SuppressWarnings("JavadocReference")
     default void dirtyHacks() throws Exception {
         TypeAdapters.ENUM_FACTORY.create(null, TypeToken.get(Object.class));
         Field field = TypeAdapters.class.getDeclaredField("ENUM_FACTORY");

@@ -1,9 +1,11 @@
 package io.izzel.arclight.common.mod.server.event;
 
 import io.izzel.arclight.common.bridge.core.entity.LivingEntityBridge;
+import io.izzel.arclight.common.bridge.core.entity.player.ServerPlayerEntityBridge;
 import io.izzel.arclight.common.bridge.core.world.WorldBridge;
 import io.izzel.arclight.common.bridge.core.world.item.ItemStackBridge;
 import io.izzel.arclight.common.bridge.core.world.level.block.BlockBridge;
+import io.izzel.arclight.common.bridge.inject.InjectEntityBridge;
 import io.izzel.arclight.common.mod.util.ArclightCaptures;
 import io.izzel.arclight.common.mod.util.DistValidate;
 import net.minecraft.core.BlockPos;
@@ -16,6 +18,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BedItem;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
@@ -28,7 +31,9 @@ import org.bukkit.craftbukkit.v.block.CraftBlockState;
 import org.bukkit.craftbukkit.v.block.CraftBlockStates;
 import org.bukkit.craftbukkit.v.damage.CraftDamageSource;
 import org.bukkit.craftbukkit.v.entity.CraftLivingEntity;
+import org.bukkit.craftbukkit.v.entity.CraftPlayer;
 import org.bukkit.craftbukkit.v.event.CraftEventFactory;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -36,6 +41,7 @@ import org.bukkit.event.block.BlockFormEvent;
 import org.bukkit.event.block.EntityBlockFormEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityDropItemEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.inventory.ItemStack;
 
 import javax.annotation.Nullable;
@@ -44,19 +50,32 @@ import java.util.Objects;
 
 public abstract class ArclightEventFactory {
 
-    public static void callEvent(Event event) {
+    public static<T extends Event> T callEvent(T event) {
         Bukkit.getPluginManager().callEvent(event);
+        return event;
     }
 
     /**
      * @see CraftEventFactory#callEntityDeathEvent
      */
-    public static void callEntityDeathEvent(LivingEntity entity, List<ItemStack> drops, DamageSource damageSource) {
+    public static EntityDeathEvent callEntityDeathEvent(LivingEntity entity, DamageSource damageSource, List<ItemStack> drops) {
         CraftDamageSource bukkitDamageSource = new CraftDamageSource(damageSource);
         CraftLivingEntity craftLivingEntity = ((LivingEntityBridge) entity).bridge$getBukkitEntity();
-        EntityDeathEvent event = new EntityDeathEvent(craftLivingEntity, bukkitDamageSource, drops, ((LivingEntityBridge) entity).bridge$getExpReward(entity));
+        EntityDeathEvent event = new EntityDeathEvent(craftLivingEntity, bukkitDamageSource, drops, ((LivingEntityBridge) entity).bridge$getExpReward(damageSource.getEntity()));
+        return callEvent(event);
+    }
+
+    /**
+     * @see CraftEventFactory#callPlayerDeathEvent(ServerPlayer, DamageSource, List, String, boolean)
+     */
+    public static PlayerDeathEvent callPlayerDeathEvent(ServerPlayer victim, DamageSource damageSource, List<ItemStack> drops, int expReward, String deathMessage, boolean keepInventory) {
+        CraftPlayer entity = (CraftPlayer) victim.bridge$getBukkitEntity();
+        CraftDamageSource bukkitDamageSource = new CraftDamageSource(damageSource);
+        PlayerDeathEvent event = new PlayerDeathEvent(entity, bukkitDamageSource, drops, expReward, 0, deathMessage);
+        event.setKeepInventory(keepInventory);
+        event.setKeepLevel(((ServerPlayerEntityBridge) victim).arclight$isKeepLevel());
         callEvent(event);
-        ((LivingEntityBridge) entity).bridge$setExpToDrop(event.getDroppedExp());
+        return event;
     }
 
     /**
@@ -72,15 +91,16 @@ public abstract class ArclightEventFactory {
         CraftBlockState blockState = CraftBlockStates.getBlockState(world, pos, flag);
         blockState.setData(block);
         BlockFormEvent event = entity == null ? new BlockFormEvent(blockState.getBlock(), blockState) : new EntityBlockFormEvent(entity.bridge$getBukkitEntity(), blockState.getBlock(), blockState);
-        callEvent(event);
-
-        return event;
+        return callEvent(event);
     }
 
-    public static EntityDropItemEvent callEntityDropItemEvent(org.bukkit.entity.Entity entity, org.bukkit.entity.Item drop) {
-        EntityDropItemEvent bukkitEvent = new EntityDropItemEvent(entity, drop);
+    /**
+     * @return if we can drop the item
+     */
+    public static<T extends ItemEntity & InjectEntityBridge> boolean callEntityDropItemEvent(InjectEntityBridge entity, T drop) {
+        EntityDropItemEvent bukkitEvent = new EntityDropItemEvent(entity.bridge$getBukkitEntity(), (Item) drop.bridge$getBukkitEntity());
         callEvent(bukkitEvent);
-        return bukkitEvent;
+        return !bukkitEvent.isCancelled();
     }
 
     public static boolean onBlockBreak(ServerPlayerGameMode controller, ServerLevel level, ServerPlayer player, BlockPos pos, BlockState state, boolean isSwordNoBreak) {
@@ -154,7 +174,7 @@ public abstract class ArclightEventFactory {
         var oldPatch = oldStack.getComponentsPatch();
 
         currentStack.setCount(size);
-        ((ItemStackBridge) (Object) currentStack).bridge$restorePatch(oldPatch);
+        ((ItemStackBridge) (Object) currentStack).arclight$restorePatch(oldPatch);
 
         if (blocks.size() > 1) {
             placeEvent = CraftEventFactory.callBlockMultiPlaceEvent(world, player, enumhand, blocks, blockposition.getX(), blockposition.getY(), blockposition.getZ());
@@ -182,7 +202,7 @@ public abstract class ArclightEventFactory {
         } else {
             // Change the stack to its new contents if it hasn't been tampered with.
             if (currentStack.getCount() == size && Objects.equals(currentStack.getComponentsPatch(), oldPatch)) {
-                ((ItemStackBridge) (Object) currentStack).bridge$restorePatch(newPatch);
+                ((ItemStackBridge) (Object) currentStack).arclight$restorePatch(newPatch);
                 currentStack.setCount(newSize);
             }
 

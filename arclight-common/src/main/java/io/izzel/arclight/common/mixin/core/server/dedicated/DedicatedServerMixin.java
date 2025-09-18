@@ -51,6 +51,13 @@ public abstract class DedicatedServerMixin extends MinecraftServerMixin implemen
         this.remoteConsole = new CraftRemoteConsoleCommandSender(this.rconConsoleSource);
     }
 
+    @Inject(method = "initServer", at = @At("RETURN"))
+    private void arclight$tickWatchdogIfLaunch(CallbackInfoReturnable<Boolean> cir) {
+        if (cir.getReturnValueZ()) {
+            arclight$tickSpigotWatchdogInternal();
+        }
+    }
+
     @Redirect(method = "handleConsoleInputs", at = @At(value = "INVOKE", target = "Lnet/minecraft/commands/Commands;performPrefixedCommand(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V"))
     private void arclight$serverCommandEvent(Commands commands, CommandSourceStack source, String command) {
         if (command.isEmpty()) {

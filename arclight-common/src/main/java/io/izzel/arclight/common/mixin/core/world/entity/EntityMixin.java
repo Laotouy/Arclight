@@ -4,13 +4,13 @@ import com.google.common.collect.ImmutableList;
 import io.izzel.arclight.common.bridge.core.command.CommandSourceBridge;
 import io.izzel.arclight.common.bridge.core.entity.EntityBridge;
 import io.izzel.arclight.common.bridge.core.entity.InternalEntityBridge;
-import io.izzel.arclight.common.bridge.core.entity.LivingEntityBridge;
 import io.izzel.arclight.common.bridge.core.entity.player.ServerPlayerEntityBridge;
 import io.izzel.arclight.common.bridge.core.network.datasync.SynchedEntityDataBridge;
 import io.izzel.arclight.common.bridge.core.util.DamageSourceBridge;
 import io.izzel.arclight.common.bridge.core.world.WorldBridge;
 import io.izzel.arclight.common.bridge.core.world.level.portal.DimensionTransitionBridge;
 import io.izzel.arclight.common.mod.server.BukkitRegistry;
+import io.izzel.arclight.common.mod.server.entity.ArclightSpawnReason;
 import io.izzel.arclight.common.mod.util.ArclightCaptures;
 import io.izzel.arclight.mixin.Decorate;
 import io.izzel.arclight.mixin.DecorationOps;
@@ -43,6 +43,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.RelativeMovement;
+import net.minecraft.world.entity.animal.Fox;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -67,18 +68,7 @@ import org.bukkit.craftbukkit.v.event.CraftPortalEvent;
 import org.bukkit.craftbukkit.v.util.CraftLocation;
 import org.bukkit.entity.Hanging;
 import org.bukkit.entity.Vehicle;
-import org.bukkit.event.entity.EntityAirChangeEvent;
-import org.bukkit.event.entity.EntityCombustByBlockEvent;
-import org.bukkit.event.entity.EntityCombustByEntityEvent;
-import org.bukkit.event.entity.EntityCombustEvent;
-import org.bukkit.event.entity.EntityDismountEvent;
-import org.bukkit.event.entity.EntityDropItemEvent;
-import org.bukkit.event.entity.EntityMountEvent;
-import org.bukkit.event.entity.EntityPortalEvent;
-import org.bukkit.event.entity.EntityPoseChangeEvent;
-import org.bukkit.event.entity.EntityRemoveEvent;
-import org.bukkit.event.entity.EntityTeleportEvent;
-import org.bukkit.event.entity.EntityUnleashEvent;
+import org.bukkit.event.entity.*;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleBlockCollisionEvent;
@@ -90,10 +80,7 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.Slice;
+import org.spongepowered.asm.mixin.injection.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
@@ -110,7 +97,7 @@ public abstract class EntityMixin implements InternalEntityBridge, EntityBridge,
     // @formatter:off
     @Shadow private float yRot;
     @Shadow public abstract Level level();
-    @Shadow protected int boardingCooldown;
+    @Shadow public int boardingCooldown;
     @Shadow private float xRot;
     @Shadow public abstract float getYRot();
     @Shadow public abstract float getXRot();
@@ -133,7 +120,7 @@ public abstract class EntityMixin implements InternalEntityBridge, EntityBridge,
     @Shadow @Nullable public abstract MinecraftServer getServer();
     @Shadow public abstract Vec3 getDeltaMovement();
     @Shadow public abstract EntityType<?> getType();
-    @Shadow @Final protected RandomSource random;
+    @Shadow @Final public RandomSource random;
     @Shadow public abstract float getBbWidth();
     @Shadow public abstract float getBbHeight();
     @Shadow public abstract boolean isInvisible();
@@ -146,7 +133,7 @@ public abstract class EntityMixin implements InternalEntityBridge, EntityBridge,
     @Shadow public void tick() {}
     @Shadow public abstract AABB getBoundingBox();
     @Shadow public abstract BlockPos blockPosition();
-    @Shadow protected boolean onGround;
+    @Shadow public boolean onGround;
     @Shadow public abstract boolean isInWater();
     @Shadow public abstract boolean isPassenger();
     @Shadow public float fallDistance;
@@ -188,7 +175,7 @@ public abstract class EntityMixin implements InternalEntityBridge, EntityBridge,
     @Shadow public abstract Vec3 position();
     @Shadow public abstract boolean isPushable();
     @Shadow protected abstract void removeAfterChangingDimensions();
-    @Shadow protected abstract Vec3 getRelativePortalPosition(Direction.Axis axis, BlockUtil.FoundRectangle result);
+    @Shadow public abstract Vec3 getRelativePortalPosition(Direction.Axis axis, BlockUtil.FoundRectangle result);
     @Shadow public abstract EntityDimensions getDimensions(Pose poseIn);
     @Shadow protected abstract boolean updateInWaterStateAndDoFluidPushing();
     @Shadow public abstract boolean isInLava();
@@ -230,9 +217,8 @@ public abstract class EntityMixin implements InternalEntityBridge, EntityBridge,
     @Shadow protected abstract void applyGravity();
     @Shadow public abstract void igniteForSeconds(float f);
     @Shadow public abstract boolean onGround();
+    @Shadow @org.jetbrains.annotations.Nullable public abstract ItemEntity spawnAtLocation(ItemStack itemStack, float f);
     // @formatter:on
-
-    @Shadow private Level level;
     private static final int CURRENT_LEVEL = 2;
     public boolean forceDrops;
     public boolean persist = true;
@@ -340,7 +326,30 @@ public abstract class EntityMixin implements InternalEntityBridge, EntityBridge,
         this.unsetRemoved();
     }
 
-    private transient EntityRemoveEvent.Cause arclight$removeCause;
+    @Unique private transient CreatureSpawnEvent.SpawnReason arclight$spawnReason;
+    @Unique private transient ArclightSpawnReason arclight$extraSpawnReason;
+
+    @Override
+    public CreatureSpawnEvent.SpawnReason arclight$getAddEntityReason() {
+        return arclight$spawnReason;
+    }
+
+    @Override
+    public void arclight$pushAddEntityReason(CreatureSpawnEvent.SpawnReason reason) {
+        arclight$spawnReason = reason;
+    }
+
+    @Override
+    public ArclightSpawnReason arclight$getExtraSpawnReason() {
+        return arclight$extraSpawnReason;
+    }
+
+    @Override
+    public void arclight$pushExtraSpawnReason(ArclightSpawnReason reason) {
+        arclight$extraSpawnReason = reason;
+    }
+
+    @Unique private transient EntityRemoveEvent.Cause arclight$removeCause;
 
     @Override
     public void bridge$pushEntityRemoveCause(EntityRemoveEvent.Cause cause) {
@@ -714,23 +723,37 @@ public abstract class EntityMixin implements InternalEntityBridge, EntityBridge,
         }
     }
 
-    @Inject(method = "spawnAtLocation(Lnet/minecraft/world/item/ItemStack;F)Lnet/minecraft/world/entity/item/ItemEntity;", cancellable = true, at = @At(value = "NEW", target = "(Lnet/minecraft/world/level/Level;DDDLnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/entity/item/ItemEntity;"))
-    private void arclight$captureEntityDrops(ItemStack itemStack, float f, CallbackInfoReturnable<ItemEntity> cir) {
-        if (this instanceof LivingEntityBridge && !((LivingEntityBridge) this).bridge$isForceDrops() && ((LivingEntityBridge) this).bridge$common$isCapturingDrops()) {
-            ((LivingEntityBridge) this).bridge$common$captureDrop(new ItemEntity(this.level(), this.getX(), this.getY() + (double) f, this.getZ(), itemStack));
-            cir.setReturnValue(null);
+    /**
+     * @see io.izzel.arclight.common.mixin.vanilla.world.entity.animal.FoxMixin_Vanilla#arclight$captureFoxDrop(Fox, ItemStack)
+     */
+    @SuppressWarnings("JavadocReference")
+    protected boolean arclight$spawnNoAdd = false;
+
+    /**
+     * This should only be used when capturing outside dropAllDeathLoot
+     */
+    @SuppressWarnings("JavadocReference")
+    @Override
+    public ItemEntity arclight$spawnAtLocationNoAdd(ItemStack stack, float yOffset) {
+        try {
+            arclight$spawnNoAdd = true;
+            return spawnAtLocation(stack, yOffset);
+        } finally {
+            arclight$spawnNoAdd = false;
         }
     }
 
-    @Inject(method = "spawnAtLocation(Lnet/minecraft/world/item/ItemStack;F)Lnet/minecraft/world/entity/item/ItemEntity;",
-        cancellable = true, locals = LocalCapture.CAPTURE_FAILHARD,
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z"))
-    public void arclight$entityDropItem(ItemStack stack, float offsetY, CallbackInfoReturnable<ItemEntity> cir, ItemEntity itementity) {
-        EntityDropItemEvent event = new EntityDropItemEvent(this.getBukkitEntity(), (org.bukkit.entity.Item) itementity.bridge$getBukkitEntity());
+    @Decorate(method = "spawnAtLocation(Lnet/minecraft/world/item/ItemStack;F)Lnet/minecraft/world/entity/item/ItemEntity;", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z"))
+    private boolean arclight$spawnNoAdd(Level instance, Entity entity) throws Throwable {
+        if (arclight$spawnNoAdd) {
+            return true;
+        }
+        EntityDropItemEvent event = new EntityDropItemEvent(this.getBukkitEntity(), (org.bukkit.entity.Item) entity.bridge$getBukkitEntity());
         Bukkit.getPluginManager().callEvent(event);
         if (event.isCancelled()) {
-            cir.setReturnValue(null);
+            return (boolean) DecorationOps.cancel().invoke((ItemEntity) null);
         }
+        return (boolean) DecorationOps.callsite().invoke(instance, entity);
     }
 
     @Inject(method = "interact", cancellable = true, at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Leashable;dropLeash(ZZ)V"))

@@ -47,6 +47,7 @@ import net.minecraft.server.level.progress.ChunkProgressListenerFactory;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.util.Mth;
+import net.minecraft.util.TimeSource;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.util.thread.ReentrantBlockableEventLoop;
 import net.minecraft.world.level.ChunkPos;
@@ -80,7 +81,6 @@ import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
@@ -497,6 +497,29 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     @Inject(method = "getServerModName", remap = false, cancellable = true, at = @At("RETURN"))
     private void arclight$brand(CallbackInfoReturnable<String> cir) {
         cir.setReturnValue(cir.getReturnValue() + " arclight/" + ArclightVersion.current().getReleaseName());
+    }
+
+    private boolean arclight$skipWatchdogSetTime = false;
+
+    @Override
+    public void arclight$extendNextTickTimeTo(TimeSource.NanoTimeSource timeSource) {
+        if (!arclight$skipWatchdogSetTime) {
+            this.nextTickTimeNanos = timeSource.getAsLong();
+        }
+    }
+
+    protected void arclight$tickSpigotWatchdogInternal() {
+        try {
+            arclight$skipWatchdogSetTime = true;
+            WatchdogThread.tick();
+        } finally {
+            arclight$skipWatchdogSetTime = false;
+        }
+    }
+
+    @Inject(method = "tickServer", at = @At("HEAD"))
+    private void arclight$tickWatchdog(CallbackInfo ci) {
+        arclight$tickSpigotWatchdogInternal();
     }
 
     @Override

@@ -1,5 +1,7 @@
 package io.izzel.arclight.forge.mod;
 
+import com.google.common.graph.Graph;
+import com.google.common.graph.Graphs;
 import cpw.mods.modlauncher.ClassTransformer;
 import cpw.mods.modlauncher.TransformingClassLoader;
 import io.izzel.arclight.api.Unsafe;
@@ -11,6 +13,7 @@ import org.objectweb.asm.ClassReader;
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Set;
 
 public class ForgeCommonImpl implements ArclightCommon.Api {
 
@@ -42,5 +45,10 @@ public class ForgeCommonImpl implements ArclightCommon.Api {
     @Override
     public boolean isModLoaded(String modid) {
         return ModList.get() != null ? ModList.get().isLoaded(modid) : FMLLoader.getLoadingModList().getModFileById(modid) != null;
+    }
+
+    @Override
+    public <T> Set<T> guavaReachableNodes(Graph<T> graph, T node) {
+        return Graphs.reachableNodes(graph, node);
     }
 }

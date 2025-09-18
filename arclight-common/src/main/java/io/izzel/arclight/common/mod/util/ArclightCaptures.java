@@ -1,13 +1,17 @@
 package io.izzel.arclight.common.mod.util;
 
+import com.google.common.base.Preconditions;
 import io.izzel.arclight.common.mod.ArclightConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.WorldLoader;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -17,10 +21,7 @@ import org.bukkit.craftbukkit.v.event.CraftPortalEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.EntityPotionEffectEvent;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Stack;
+import java.util.*;
 
 public class ArclightCaptures {
 
@@ -72,8 +73,11 @@ public class ArclightCaptures {
     public static List<ItemEntity> getBlockDrops() {
         if (!blockBreakEventStack.empty()) {
             return blockBreakEventStack.peek().getBlockDrops();
+        } else if (captureBlockPopRes) {
+            return Preconditions.checkNotNull(extraDrops, "Not capturing drops!");
+        } else {
+            return null;
         }
-        return null;
     }
 
     public static boolean getBlockBreakDropItems() {
@@ -84,7 +88,7 @@ public class ArclightCaptures {
     }
 
     public static BlockBreakEventContext popPrimaryBlockBreakEvent() {
-        if (blockBreakEventStack.size() > 0) {
+        if (!blockBreakEventStack.empty()) {
             BlockBreakEventContext eventContext = blockBreakEventStack.pop();
 
             // deal with unhandled secondary events
@@ -107,7 +111,7 @@ public class ArclightCaptures {
     }
 
     public static BlockBreakEventContext popSecondaryBlockBreakEvent() {
-        if (blockBreakEventStack.size() > 0) {
+        if (!blockBreakEventStack.empty()) {
             BlockBreakEventContext eventContext = blockBreakEventStack.peek();
             if (!eventContext.isPrimary()) {
                 return blockBreakEventStack.pop();
@@ -378,13 +382,53 @@ public class ArclightCaptures {
 
     private static boolean playerInteractCancelled;
 
-    public static void cancelPlayerInteract() { playerInteractCancelled = true; }
+    public static void cancelNextPlayerInteract() { playerInteractCancelled = true; }
 
     public static boolean shouldCancelPlayerInteract() {
         try {
             return playerInteractCancelled;
         } finally {
             playerInteractCancelled = false;
+        }
+    }
+
+    private static boolean captureBlockPopRes = false;
+
+    public static void captureBlockPopResForExtraDrops(boolean state) {
+        captureBlockPopRes = state;
+    }
+
+    private static List<ItemEntity> extraDrops;
+
+    /**
+     * 1. Used by armor stands to capture their contents. <br/>
+     * 2. Used by foxes to capture their drops. <br/>
+     * 3. SENTINEL
+     * @see io.izzel.arclight.common.mod.server.event.EntityEventHandler#monitorLivingDrops(LivingEntity, DamageSource, List, boolean)
+     */
+    public static void captureExtraDrops(List<ItemEntity> capturedDrops) {
+        extraDrops = capturedDrops;
+    }
+
+    public static List<ItemEntity> consumeExtraDrops() {
+        try {
+            return extraDrops;
+        } finally {
+            extraDrops = null;
+        }
+    }
+
+    private static Inventory deathPlayerInv;
+
+    public static void capturePlayerDeathInv(Inventory inventory) {
+        deathPlayerInv = inventory;
+    }
+
+    public static Inventory getDeathPlayerInv() {
+        try {
+            return deathPlayerInv;
+        } finally {
+            deathPlayerInv = null;
         }
     }
 

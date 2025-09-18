@@ -1,11 +1,11 @@
 package io.izzel.arclight.common.mod.server;
 
 import com.google.common.graph.Graph;
-import com.google.common.graph.Graphs;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.izzel.arclight.common.bridge.bukkit.CraftServerBridge;
 import io.izzel.arclight.common.bridge.core.server.MinecraftServerBridge;
 import io.izzel.arclight.common.mixin.bukkit.plugin.SimplePluginManagerAccessor;
+import io.izzel.arclight.common.mod.ArclightCommon;
 import io.izzel.arclight.common.mod.util.VelocitySupport;
 import io.izzel.arclight.common.mod.util.log.ArclightI18nLogger;
 import net.minecraft.resources.ResourceKey;
@@ -72,7 +72,7 @@ public class ArclightServer {
         SimplePluginManager manager = (SimplePluginManager) Bukkit.getPluginManager();
         Graph<String> dependencyGraph = ((SimplePluginManagerAccessor)(Object) manager).arclight$dependencyGraph();
         if (dependencyGraph.nodes().contains(desc.getName())) {
-            return Graphs.reachableNodes(dependencyGraph, desc.getName());
+            return ArclightCommon.api().guavaReachableNodes(dependencyGraph, desc.getName());
         } else {
             return Collections.emptySet();
         }
