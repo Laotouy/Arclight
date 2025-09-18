@@ -1664,6 +1664,7 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
 
     private transient boolean arclight$noTeleportEvent;
     private transient boolean arclight$teleportCancelled;
+    private transient Set<RelativeMovement> arclight$overrideRelativeSet;
 
     @Decorate(method = "teleport(DDDFFLjava/util/Set;)V", inject = true, at = @At("HEAD"))
     private void arclight$teleportEvent(double x, double y, double z, float yaw, float pitch, Set<RelativeMovement> relativeSet) throws Throwable {
@@ -1676,17 +1677,21 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
             PlayerTeleportEvent event = new PlayerTeleportEvent(player, from.clone(), to.clone(), cause);
             this.cserver.getPluginManager().callEvent(event);
             if (event.isCancelled() || !to.equals(event.getTo())) {
-                relativeSet.clear();
+                // 使用一个新的空集合替代原有集合（原集合可能是不可变的）
+                arclight$overrideRelativeSet = Collections.emptySet();
                 to = (event.isCancelled() ? event.getFrom() : event.getTo());
                 x = to.getX();
                 y = to.getY();
                 z = to.getZ();
                 yaw = to.getYaw();
                 pitch = to.getPitch();
+            } else {
+                arclight$overrideRelativeSet = null;
             }
             arclight$teleportCancelled = event.isCancelled();
         } else {
             arclight$teleportCancelled = false;
+            arclight$overrideRelativeSet = null;
         }
         arclight$noTeleportEvent = false;
 
@@ -1697,7 +1702,10 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
             pitch = 0.0f;
         }
         this.justTeleported = true;
-        DecorationOps.blackhole().invoke(x, y, z, yaw, pitch);
+        // 使用 override 集合如果有的话，否则使用原集合
+        Set<RelativeMovement> actualSet = arclight$overrideRelativeSet != null ? arclight$overrideRelativeSet : relativeSet;
+        DecorationOps.blackhole().invoke(x, y, z, yaw, pitch, actualSet);
+        arclight$overrideRelativeSet = null; // 清理
     }
 
     public void teleport(double d0, double d1, double d2, float f, float f1, PlayerTeleportEvent.TeleportCause cause) {
