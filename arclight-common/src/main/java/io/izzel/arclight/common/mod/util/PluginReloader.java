@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
 import org.bukkit.command.PluginCommand;
+import org.bukkit.command.SimpleCommandMap;
 import org.bukkit.plugin.InvalidDescriptionException;
 import org.bukkit.plugin.InvalidPluginException;
 import org.bukkit.plugin.Plugin;
@@ -15,8 +16,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.java.JavaPluginLoader;
 
 import java.io.File;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -87,7 +90,11 @@ public class PluginReloader {
         String pluginName = plugin.getName();
         SimplePluginManager pluginManager = (SimplePluginManager) Bukkit.getPluginManager();
 
-        // 禁用插件
+        // 取消所有任务调度器任务
+        Bukkit.getScheduler().cancelTasks(plugin);
+        LOGGER.info("已取消插件 " + pluginName + " 的所有任务调度器任务");
+
+        // 禁用插件（这也会调用 plugin.onDisable()）
         pluginManager.disablePlugin(plugin);
 
         // 使用反射访问私有字段
@@ -158,13 +165,41 @@ public class PluginReloader {
             LOGGER.log(Level.WARNING, "Failed to unregister commands for plugin: " + pluginName, e);
         }
 
+        // 清理事件监听器
+        try {
+            // 通过反射获取 HandlerList
+            Class<?> handlerListClass = Class.forName("org.bukkit.event.HandlerList");
+            java.lang.reflect.Method unregisterAllMethod = handlerListClass.getDeclaredMethod("unregisterAll", Plugin.class);
+            unregisterAllMethod.invoke(null, plugin);
+            LOGGER.info("已注销插件 " + pluginName + " 的所有事件监听器");
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "无法注销事件监听器: " + pluginName, e);
+        }
+
+        // 清理服务注册
+        Bukkit.getServicesManager().unregisterAll(plugin);
+        LOGGER.info("已注销插件 " + pluginName + " 的所有服务");
+
         // 关闭类加载器
         if (plugin.getClass().getClassLoader() instanceof URLClassLoader) {
             try {
                 URLClassLoader classLoader = (URLClassLoader) plugin.getClass().getClassLoader();
                 classLoader.close();
+                LOGGER.info("已关闭插件 " + pluginName + " 的类加载器");
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Failed to close class loader", e);
+            }
+        }
+
+        // 清理桥接类加载器的特殊状态
+        if (plugin.getClass().getClassLoader() instanceof PluginClassLoaderBridge) {
+            try {
+                PluginClassLoaderBridge bridge = (PluginClassLoaderBridge) plugin.getClass().getClassLoader();
+                // 设置为非强制重载模式
+                bridge.arclight$setForceReload(false);
+                LOGGER.info("已重置插件 " + pluginName + " 的桥接类加载器状态");
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "无法重置桥接类加载器: " + pluginName, e);
             }
         }
 
@@ -210,6 +245,12 @@ public class PluginReloader {
                 // 启用插件
                 pluginManager.enablePlugin(plugin);
 
+                // 确保插件被正确添加到插件管理器
+                ensurePluginRegistered(plugin);
+
+                // 重新同步命令到服务器命令系统
+                syncPluginCommands(plugin);
+
                 LOGGER.info("Loaded and enabled plugin: " + plugin.getName());
             }
 
@@ -227,11 +268,6 @@ public class PluginReloader {
     private static void setNextPluginReloadMode(boolean enable) {
         // 这个标志会在 JavaPluginLoaderMixin 中读取
         System.setProperty("arclight.plugin.forceReload", String.valueOf(enable));
-        if (enable) {
-            LOGGER.info("Enabled force reload mode for next plugin load");
-        } else {
-            LOGGER.info("Disabled force reload mode");
-        }
     }
 
     /**
@@ -268,5 +304,140 @@ public class PluginReloader {
             return null;
         }
         return reloadPlugin(plugin);
+    }
+
+    /**
+     * 确保插件被正确注册到插件管理器
+     * @param plugin 插件实例
+     */
+    private static void ensurePluginRegistered(Plugin plugin) {
+        if (plugin == null) {
+            return;
+        }
+
+        try {
+            SimplePluginManager pluginManager = (SimplePluginManager) Bukkit.getPluginManager();
+
+            // 获取插件列表和查找映射
+            Field pluginsField = SimplePluginManager.class.getDeclaredField("plugins");
+            Field lookupNamesField = SimplePluginManager.class.getDeclaredField("lookupNames");
+
+            pluginsField.setAccessible(true);
+            lookupNamesField.setAccessible(true);
+
+            List<Plugin> plugins = (List<Plugin>) pluginsField.get(pluginManager);
+            Map<String, Plugin> lookupNames = (Map<String, Plugin>) lookupNamesField.get(pluginManager);
+
+            String pluginName = plugin.getName();
+
+            // 确保插件在列表中
+            if (!plugins.contains(plugin)) {
+                plugins.add(plugin);
+                LOGGER.info("已将插件 " + pluginName + " 添加到插件列表");
+            }
+
+            // 确保插件在查找映射中
+            lookupNames.put(pluginName.toLowerCase(), plugin);
+
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "无法确保插件正确注册: " + plugin.getName(), e);
+        }
+    }
+
+    /**
+     * 同步插件命令到服务器命令系统
+     * @param plugin 插件实例
+     */
+    private static void syncPluginCommands(Plugin plugin) {
+        if (plugin == null) {
+            return;
+        }
+
+        try {
+            SimplePluginManager pluginManager = (SimplePluginManager) Bukkit.getPluginManager();
+
+            // 获取命令映射字段
+            Field commandMapField = SimplePluginManager.class.getDeclaredField("commandMap");
+            commandMapField.setAccessible(true);
+            SimpleCommandMap commandMap = (SimpleCommandMap) commandMapField.get(pluginManager);
+
+            // 获取插件描述文件中的命令
+            PluginDescriptionFile description = plugin.getDescription();
+            Map<String, Map<String, Object>> commands = description.getCommands();
+
+            if (commands != null && !commands.isEmpty()) {
+                for (Map.Entry<String, Map<String, Object>> entry : commands.entrySet()) {
+                    String commandName = entry.getKey();
+
+                    if (commandName.contains(":")) {
+                        LOGGER.warning("Command " + commandName + " contains ':' - skipping");
+                        continue;
+                    }
+
+                    // 创建新的 PluginCommand 实例
+                    PluginCommand command = createPluginCommand(commandName, plugin);
+
+                    if (command != null) {
+                        // 设置命令属性
+                        Map<String, Object> commandData = entry.getValue();
+                        if (commandData != null) {
+                            Object descriptionObj = commandData.get("description");
+                            Object usageObj = commandData.get("usage");
+                            Object aliasesObj = commandData.get("aliases");
+                            Object permissionObj = commandData.get("permission");
+                            Object permissionMessageObj = commandData.get("permission-message");
+
+                            if (descriptionObj != null) {
+                                command.setDescription(descriptionObj.toString());
+                            }
+                            if (usageObj != null) {
+                                command.setUsage(usageObj.toString());
+                            }
+                            if (aliasesObj != null) {
+                                List<String> aliases = new ArrayList<>();
+                                if (aliasesObj instanceof List) {
+                                    for (Object alias : (List<?>) aliasesObj) {
+                                        aliases.add(alias.toString());
+                                    }
+                                } else {
+                                    aliases.add(aliasesObj.toString());
+                                }
+                                command.setAliases(aliases);
+                            }
+                            if (permissionObj != null) {
+                                command.setPermission(permissionObj.toString());
+                            }
+                            if (permissionMessageObj != null) {
+                                command.setPermissionMessage(permissionMessageObj.toString());
+                            }
+                        }
+
+                        // 注册命令
+                        commandMap.register(plugin.getName().toLowerCase(), command);
+                        LOGGER.info("重新注册命令: " + commandName + " (插件: " + plugin.getName() + ")");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "无法同步插件命令: " + plugin.getName(), e);
+        }
+    }
+
+    /**
+     * 创建 PluginCommand 实例
+     * @param name 命令名称
+     * @param plugin 插件实例
+     * @return PluginCommand 实例，失败返回null
+     */
+    private static PluginCommand createPluginCommand(String name, Plugin plugin) {
+        try {
+            // 使用反射创建 PluginCommand（构造函数是 protected）
+            Constructor<PluginCommand> constructor = PluginCommand.class.getDeclaredConstructor(String.class, Plugin.class);
+            constructor.setAccessible(true);
+            return constructor.newInstance(name, plugin);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "无法创建命令: " + name, e);
+            return null;
+        }
     }
 }

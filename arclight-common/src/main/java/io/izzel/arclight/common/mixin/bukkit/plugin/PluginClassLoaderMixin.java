@@ -94,7 +94,6 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
             this.arclight$forceReload = true;
             // 立即清除属性，避免影响其他插件
             System.clearProperty("arclight.plugin.forceReload");
-            arclight$systemLogger().info("[Arclight] Plugin " + description.getName() + " loaded with force reload mode enabled");
         }
 
         Class<?> jarClass;
@@ -306,7 +305,6 @@ public abstract class PluginClassLoaderMixin extends URLClassLoader implements R
             try {
                 if (arclight$forceReload) {
                     // 重载模式：创建新的 ZipFile 实例以确保读取最新内容
-                    arclight$systemLogger().info("[Arclight] Force reload mode active for " + description.getName() + ", loading class: " + name);
                     try (ZipFile zipFile = new ZipFile(file)) {
                         ZipEntry entry = zipFile.getEntry(path);
                         if (entry == null) {
