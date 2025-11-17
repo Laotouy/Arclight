@@ -299,11 +299,14 @@ public class PluginReloader {
                 // 确保插件被正确添加到插件管理器
                 ensurePluginRegistered(plugin);
 
-                // 启用插件
+                // 先注册命令，但不设置执行器（让插件在 onEnable 中设置）
+                preparePluginCommands(plugin);
+
+                // 启用插件（插件的 onEnable 会通过 getCommand() 获取命令并设置执行器）
                 pluginManager.enablePlugin(plugin);
 
-                // 在插件启用后注册命令（确保插件处于启用状态）
-                syncPluginCommands(plugin);
+                // 验证命令是否正确设置
+                verifyPluginCommands(plugin);
 
                 LOGGER.info("Loaded and enabled plugin: " + plugin.getName());
             }
@@ -395,6 +398,172 @@ public class PluginReloader {
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "无法确保插件正确注册: " + plugin.getName(), e);
+        }
+    }
+
+    /**
+     * 准备插件命令（注册但不设置执行器）
+     * @param plugin 插件实例
+     */
+    private static void preparePluginCommands(Plugin plugin) {
+        if (plugin == null) {
+            return;
+        }
+
+        try {
+            SimplePluginManager pluginManager = (SimplePluginManager) Bukkit.getPluginManager();
+
+            // 获取命令映射字段
+            Field commandMapField = SimplePluginManager.class.getDeclaredField("commandMap");
+            commandMapField.setAccessible(true);
+            SimpleCommandMap commandMap = (SimpleCommandMap) commandMapField.get(pluginManager);
+
+            // 获取 knownCommands 字段
+            Map<String, Command> knownCommands = getKnownCommands(commandMap);
+
+            // 获取插件描述文件中的命令
+            PluginDescriptionFile description = plugin.getDescription();
+            Map<String, Map<String, Object>> commands = description.getCommands();
+
+            if (commands != null && !commands.isEmpty()) {
+                for (Map.Entry<String, Map<String, Object>> entry : commands.entrySet()) {
+                    String commandName = entry.getKey();
+
+                    if (commandName.contains(":")) {
+                        LOGGER.warning("Command " + commandName + " contains ':' - skipping");
+                        continue;
+                    }
+
+                    // 清理可能存在的旧命令
+                    if (knownCommands != null) {
+                        String fullName = commandName.toLowerCase();
+                        Command oldCmd = knownCommands.remove(fullName);
+                        if (oldCmd != null) {
+                            oldCmd.unregister(commandMap);
+                        }
+                    }
+
+                    // 创建新的 PluginCommand 实例
+                    PluginCommand command = createPluginCommand(commandName, plugin);
+
+                    if (command != null) {
+                        // 设置命令属性但不设置执行器
+                        Map<String, Object> commandData = entry.getValue();
+                        if (commandData != null) {
+                            setCommandProperties(command, commandData);
+                        }
+
+                        // 注册命令
+                        commandMap.register(plugin.getName().toLowerCase(), command);
+                        
+                        // 确保命令在 knownCommands 中正确映射
+                        if (knownCommands != null) {
+                            knownCommands.put(commandName.toLowerCase(), command);
+                            knownCommands.put(plugin.getName().toLowerCase() + ":" + commandName.toLowerCase(), command);
+                            
+                            // 添加别名
+                            for (String alias : command.getAliases()) {
+                                knownCommands.put(alias.toLowerCase(), command);
+                                knownCommands.put(plugin.getName().toLowerCase() + ":" + alias.toLowerCase(), command);
+                            }
+                        }
+                        
+                        LOGGER.info("准备命令: " + commandName + " (插件: " + plugin.getName() + ")");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "无法准备插件命令: " + plugin.getName(), e);
+        }
+    }
+
+    /**
+     * 验证插件命令是否正确设置
+     * @param plugin 插件实例
+     */
+    private static void verifyPluginCommands(Plugin plugin) {
+        if (plugin == null) {
+            return;
+        }
+
+        try {
+            PluginDescriptionFile description = plugin.getDescription();
+            Map<String, Map<String, Object>> commands = description.getCommands();
+
+            if (commands != null && !commands.isEmpty()) {
+                for (String commandName : commands.keySet()) {
+                    // 通过插件的 getCommand 方法获取命令
+                    try {
+                        java.lang.reflect.Method getCommand = JavaPlugin.class.getDeclaredMethod("getCommand", String.class);
+                        getCommand.setAccessible(true);
+                        PluginCommand cmd = (PluginCommand) getCommand.invoke(plugin, commandName);
+                        
+                        if (cmd != null) {
+                            if (cmd.getExecutor() == null || cmd.getExecutor() == plugin) {
+                                LOGGER.warning("命令 " + commandName + " 的执行器未正确设置");
+                            } else {
+                                LOGGER.info("命令 " + commandName + " 的执行器已设置: " + 
+                                          cmd.getExecutor().getClass().getSimpleName());
+                            }
+                        } else {
+                            LOGGER.warning("无法通过 getCommand 获取命令: " + commandName);
+                        }
+                    } catch (Exception e) {
+                        LOGGER.warning("验证命令时出错: " + commandName + " - " + e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "验证插件命令时出错: " + plugin.getName(), e);
+        }
+    }
+
+    /**
+     * 获取 knownCommands 字段
+     */
+    private static Map<String, Command> getKnownCommands(SimpleCommandMap commandMap) {
+        try {
+            Field knownCommandsField = SimpleCommandMap.class.getDeclaredField("knownCommands");
+            knownCommandsField.setAccessible(true);
+            return (Map<String, Command>) knownCommandsField.get(commandMap);
+        } catch (Exception e) {
+            LOGGER.warning("无法获取 knownCommands: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 设置命令属性
+     */
+    private static void setCommandProperties(PluginCommand command, Map<String, Object> commandData) {
+        Object descriptionObj = commandData.get("description");
+        Object usageObj = commandData.get("usage");
+        Object aliasesObj = commandData.get("aliases");
+        Object permissionObj = commandData.get("permission");
+        Object permissionMessageObj = commandData.get("permission-message");
+
+        if (descriptionObj != null) {
+            command.setDescription(descriptionObj.toString());
+        }
+        if (usageObj != null) {
+            command.setUsage(usageObj.toString());
+        }
+        if (aliasesObj != null) {
+            List<String> aliases = new ArrayList<>();
+            if (aliasesObj instanceof List) {
+                for (Object alias : (List<?>) aliasesObj) {
+                    aliases.add(alias.toString());
+                }
+            } else {
+                aliases.add(aliasesObj.toString());
+            }
+            command.setAliases(aliases);
+        }
+        if (permissionObj != null) {
+            command.setPermission(permissionObj.toString());
+        }
+        if (permissionMessageObj != null) {
+            command.setPermissionMessage(permissionMessageObj.toString());
         }
     }
 
@@ -565,6 +734,14 @@ public class PluginReloader {
                         
                         // 注册命令
                         commandMap.register(plugin.getName().toLowerCase(), command);
+                        
+                        // 设置默认的执行器为插件本身
+                        try {
+                            command.setExecutor(plugin);
+                            LOGGER.info("设置命令 " + commandName + " 的执行器为插件");
+                        } catch (Exception e) {
+                            LOGGER.warning("无法设置命令执行器: " + commandName + " - " + e.getMessage());
+                        }
                         
                         // 确保命令在 knownCommands 中正确映射
                         if (knownCommands != null) {
