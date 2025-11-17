@@ -2,6 +2,26 @@
 
 本文件为 Claude Code (claude.ai/code) 在处理此代码仓库时提供指导。
 
+## 构建和部署指令
+
+**每次修改代码后的标准构建和部署流程：**
+
+1. **构建命令**：
+   ```bash
+   ./gradlew clean build collect
+   ```
+
+2. **部署 Fabric 版本到测试服务器**：
+   ```bash
+   cp build/libs/arclight-fabric-1.21.1-*.jar /Users/admin/Documents/服务端/测试服务端1.21/arclight-fabric-1.21.1.jar
+   ```
+
+3. **部署其他版本（如需要）**：
+   - Forge: `cp build/libs/arclight-forge-1.21.1-*.jar /Users/admin/Documents/服务端/测试服务端1.21/`
+   - NeoForge: `cp build/libs/arclight-neoforge-1.21.1-*.jar /Users/admin/Documents/服务端/测试服务端1.21/`
+
+**注意**：构建完成后自动复制到测试服务器目录，方便立即测试。
+
 ## 重要指令
 
 ### 语言要求

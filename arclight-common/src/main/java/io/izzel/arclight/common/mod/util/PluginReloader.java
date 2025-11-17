@@ -116,46 +116,100 @@ public class PluginReloader {
 
         // 注销命令
         try {
+            // 打印 commandMap 的实际类型
+            LOGGER.info("CommandMap 类型: " + commandMap.getClass().getName());
+            LOGGER.info("CommandMap 父类: " + commandMap.getClass().getSuperclass().getName());
+            
             // 尝试不同的字段名
             Field knownCommandsField = null;
             Map<String, Command> knownCommands = null;
 
-            // 尝试 "knownCommands"
-            try {
-                knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
-                knownCommandsField.setAccessible(true);
-                knownCommands = (Map<String, Command>) knownCommandsField.get(commandMap);
-            } catch (NoSuchFieldException e1) {
-                // 尝试其他可能的字段名
-                for (Field field : commandMap.getClass().getDeclaredFields()) {
-                    if (Map.class.isAssignableFrom(field.getType())) {
-                        field.setAccessible(true);
-                        Object value = field.get(commandMap);
-                        if (value instanceof Map) {
-                            Map<?, ?> map = (Map<?, ?>) value;
-                            if (!map.isEmpty()) {
-                                Map.Entry<?, ?> entry = map.entrySet().iterator().next();
-                                if (entry.getKey() instanceof String && entry.getValue() instanceof Command) {
-                                    knownCommands = (Map<String, Command>) value;
-                                    LOGGER.info("Found command map field: " + field.getName());
-                                    break;
+            // 首先尝试从实际类获取
+            Class<?> cmdMapClass = commandMap.getClass();
+            while (cmdMapClass != null && knownCommands == null) {
+                try {
+                    knownCommandsField = cmdMapClass.getDeclaredField("knownCommands");
+                    knownCommandsField.setAccessible(true);
+                    knownCommands = (Map<String, Command>) knownCommandsField.get(commandMap);
+                    LOGGER.info("在 " + cmdMapClass.getName() + " 中找到 knownCommands 字段");
+                    break;
+                } catch (NoSuchFieldException e) {
+                    // 继续尝试父类
+                }
+                cmdMapClass = cmdMapClass.getSuperclass();
+            }
+            
+            if (knownCommands == null) {
+                LOGGER.warning("通过继承链未找到 knownCommands，尝试遍历所有字段");
+                // 遍历 commandMap 实际类的所有字段
+                cmdMapClass = commandMap.getClass();
+                while (cmdMapClass != null && knownCommands == null) {
+                    LOGGER.info("检查类 " + cmdMapClass.getName() + " 的字段:");
+                    for (Field field : cmdMapClass.getDeclaredFields()) {
+                        if (Map.class.isAssignableFrom(field.getType())) {
+                            LOGGER.info("  发现 Map 字段: " + field.getName());
+                            field.setAccessible(true);
+                            try {
+                                Object value = field.get(commandMap);
+                                if (value instanceof Map) {
+                                    Map<?, ?> map = (Map<?, ?>) value;
+                                    if (!map.isEmpty()) {
+                                        Map.Entry<?, ?> entry = map.entrySet().iterator().next();
+                                        LOGGER.info("    内容类型: " + entry.getKey().getClass().getSimpleName() + 
+                                                   " -> " + entry.getValue().getClass().getSimpleName());
+                                        if (entry.getKey() instanceof String && entry.getValue() instanceof Command) {
+                                            knownCommands = (Map<String, Command>) value;
+                                            LOGGER.info("  使用字段 " + field.getName() + " 作为命令映射!");
+                                            break;
+                                        }
+                                    } else {
+                                        LOGGER.info("    字段为空");
+                                    }
                                 }
+                            } catch (Exception e) {
+                                LOGGER.warning("    无法访问字段 " + field.getName() + ": " + e.getMessage());
                             }
                         }
+                    }
+                    if (knownCommands == null) {
+                        cmdMapClass = cmdMapClass.getSuperclass();
                     }
                 }
             }
 
             if (knownCommands != null) {
-                Iterator<Map.Entry<String, Command>> it = knownCommands.entrySet().iterator();
-                while (it.hasNext()) {
-                    Map.Entry<String, Command> entry = it.next();
+                // 收集所有需要删除的命令键（包括别名）
+                List<String> keysToRemove = new ArrayList<>();
+                for (Map.Entry<String, Command> entry : knownCommands.entrySet()) {
                     if (entry.getValue() instanceof PluginCommand) {
                         PluginCommand command = (PluginCommand) entry.getValue();
                         if (command.getPlugin() == plugin) {
-                            command.unregister(commandMap);
-                            it.remove();
+                            keysToRemove.add(entry.getKey());
+                            
+                            // 记录正在注销的命令
+                            LOGGER.info("正在注销命令: " + entry.getKey() + " (插件: " + pluginName + 
+                                       ", 插件对象: " + System.identityHashCode(plugin) + 
+                                       ", 命令对象: " + System.identityHashCode(command) + ")");
                         }
+                    }
+                }
+                
+                // 批量删除所有相关命令
+                for (String key : keysToRemove) {
+                    Command cmd = knownCommands.remove(key);
+                    if (cmd != null) {
+                        cmd.unregister(commandMap);
+                    }
+                }
+                
+                if (!keysToRemove.isEmpty()) {
+                    LOGGER.info("已注销插件 " + pluginName + " 的 " + keysToRemove.size() + " 个命令");
+                }
+                
+                // 再次验证命令确实被移除
+                for (String key : keysToRemove) {
+                    if (knownCommands.containsKey(key)) {
+                        LOGGER.warning("警告：命令 " + key + " 未被完全移除！");
                     }
                 }
             } else {
@@ -242,13 +296,13 @@ public class PluginReloader {
                 // 调用 onLoad
                 plugin.onLoad();
 
-                // 启用插件
-                pluginManager.enablePlugin(plugin);
-
                 // 确保插件被正确添加到插件管理器
                 ensurePluginRegistered(plugin);
 
-                // 重新同步命令到服务器命令系统
+                // 启用插件
+                pluginManager.enablePlugin(plugin);
+
+                // 在插件启用后注册命令（确保插件处于启用状态）
                 syncPluginCommands(plugin);
 
                 LOGGER.info("Loaded and enabled plugin: " + plugin.getName());
@@ -361,6 +415,33 @@ public class PluginReloader {
             commandMapField.setAccessible(true);
             SimpleCommandMap commandMap = (SimpleCommandMap) commandMapField.get(pluginManager);
 
+            // 获取 knownCommands 字段用于清理旧命令
+            Field knownCommandsField = null;
+            Map<String, Command> knownCommands = null;
+            try {
+                knownCommandsField = SimpleCommandMap.class.getDeclaredField("knownCommands");
+                knownCommandsField.setAccessible(true);
+                knownCommands = (Map<String, Command>) knownCommandsField.get(commandMap);
+                LOGGER.info("syncPluginCommands: 成功获取 knownCommands 字段");
+            } catch (NoSuchFieldException e) {
+                LOGGER.warning("syncPluginCommands: 未找到 knownCommands 字段，尝试遍历");
+                // 尝试查找其他可能的字段名
+                for (Field field : SimpleCommandMap.class.getDeclaredFields()) {
+                    if (Map.class.isAssignableFrom(field.getType())) {
+                        field.setAccessible(true);
+                        Object value = field.get(commandMap);
+                        if (value instanceof Map && !((Map<?, ?>) value).isEmpty()) {
+                            Map.Entry<?, ?> entry = ((Map<?, ?>) value).entrySet().iterator().next();
+                            if (entry.getKey() instanceof String && entry.getValue() instanceof Command) {
+                                knownCommands = (Map<String, Command>) value;
+                                LOGGER.info("syncPluginCommands: 使用字段 " + field.getName());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             // 获取插件描述文件中的命令
             PluginDescriptionFile description = plugin.getDescription();
             Map<String, Map<String, Object>> commands = description.getCommands();
@@ -374,10 +455,64 @@ public class PluginReloader {
                         continue;
                     }
 
+                    // 先清理可能存在的同名旧命令
+                    if (knownCommands != null) {
+                        // 清理主命令名
+                        String fullName = commandName.toLowerCase();
+                        String prefixedName = plugin.getName().toLowerCase() + ":" + fullName;
+                        
+                        Command oldCommand = knownCommands.remove(fullName);
+                        if (oldCommand != null) {
+                            oldCommand.unregister(commandMap);
+                            LOGGER.info("清理旧命令: " + fullName);
+                        }
+                        
+                        oldCommand = knownCommands.remove(prefixedName);
+                        if (oldCommand != null) {
+                            oldCommand.unregister(commandMap);
+                            LOGGER.info("清理旧命令: " + prefixedName);
+                        }
+                        
+                        // 清理别名
+                        Map<String, Object> commandData = entry.getValue();
+                        if (commandData != null) {
+                            Object aliasesObj = commandData.get("aliases");
+                            if (aliasesObj != null) {
+                                List<String> aliases = new ArrayList<>();
+                                if (aliasesObj instanceof List) {
+                                    for (Object alias : (List<?>) aliasesObj) {
+                                        aliases.add(alias.toString().toLowerCase());
+                                    }
+                                } else {
+                                    aliases.add(aliasesObj.toString().toLowerCase());
+                                }
+                                
+                                for (String alias : aliases) {
+                                    oldCommand = knownCommands.remove(alias);
+                                    if (oldCommand != null) {
+                                        oldCommand.unregister(commandMap);
+                                        LOGGER.info("清理旧命令别名: " + alias);
+                                    }
+                                    
+                                    String prefixedAlias = plugin.getName().toLowerCase() + ":" + alias;
+                                    oldCommand = knownCommands.remove(prefixedAlias);
+                                    if (oldCommand != null) {
+                                        oldCommand.unregister(commandMap);
+                                        LOGGER.info("清理旧命令别名: " + prefixedAlias);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // 创建新的 PluginCommand 实例
                     PluginCommand command = createPluginCommand(commandName, plugin);
 
                     if (command != null) {
+                        LOGGER.info("创建命令 " + commandName + " 插件引用: " + command.getPlugin().getName() + 
+                                   " (已启用: " + command.getPlugin().isEnabled() + 
+                                   ", 插件对象: " + System.identityHashCode(command.getPlugin()) + 
+                                   ", 新插件对象: " + System.identityHashCode(plugin) + ")");
                         // 设置命令属性
                         Map<String, Object> commandData = entry.getValue();
                         if (commandData != null) {
@@ -412,8 +547,54 @@ public class PluginReloader {
                             }
                         }
 
+                        // 先强制移除可能存在的旧命令实例（使用 commandMap.register 可能不会覆盖）
+                        if (knownCommands != null) {
+                            // 先查看当前映射的命令
+                            Command oldCmd = knownCommands.get(commandName.toLowerCase());
+                            if (oldCmd != null) {
+                                LOGGER.info("发现旧命令: " + commandName + 
+                                           " (对象: " + System.identityHashCode(oldCmd) + ")");
+                                if (oldCmd instanceof PluginCommand) {
+                                    PluginCommand oldPC = (PluginCommand) oldCmd;
+                                    LOGGER.info("  旧插件: " + oldPC.getPlugin().getName() + 
+                                               " (启用: " + oldPC.getPlugin().isEnabled() + 
+                                               ", 对象: " + System.identityHashCode(oldPC.getPlugin()) + ")");
+                                }
+                            }
+                        }
+                        
                         // 注册命令
                         commandMap.register(plugin.getName().toLowerCase(), command);
+                        
+                        // 确保命令在 knownCommands 中正确映射
+                        if (knownCommands != null) {
+                            // 添加主命令
+                            knownCommands.put(commandName.toLowerCase(), command);
+                            knownCommands.put(plugin.getName().toLowerCase() + ":" + commandName.toLowerCase(), command);
+                            
+                            // 添加别名
+                            for (String alias : command.getAliases()) {
+                                knownCommands.put(alias.toLowerCase(), command);
+                                knownCommands.put(plugin.getName().toLowerCase() + ":" + alias.toLowerCase(), command);
+                            }
+                            
+                            // 验证命令确实被添加
+                            Command verifyCmd = knownCommands.get(commandName.toLowerCase());
+                            if (verifyCmd instanceof PluginCommand) {
+                                PluginCommand pc = (PluginCommand) verifyCmd;
+                                LOGGER.info("验证命令映射: " + commandName + " -> 插件: " + pc.getPlugin().getName() + 
+                                           " (启用: " + pc.getPlugin().isEnabled() + 
+                                           ", 插件对象: " + System.identityHashCode(pc.getPlugin()) + 
+                                           ", 命令对象: " + System.identityHashCode(pc) + 
+                                           ", 应为: " + System.identityHashCode(command) + ")");
+                                
+                                if (pc != command) {
+                                    LOGGER.warning("警告：命令对象不匹配！实际: " + System.identityHashCode(pc) + 
+                                                  ", 期望: " + System.identityHashCode(command));
+                                }
+                            }
+                        }
+                        
                         LOGGER.info("重新注册命令: " + commandName + " (插件: " + plugin.getName() + ")");
                     }
                 }
@@ -434,7 +615,30 @@ public class PluginReloader {
             // 使用反射创建 PluginCommand（构造函数是 protected）
             Constructor<PluginCommand> constructor = PluginCommand.class.getDeclaredConstructor(String.class, Plugin.class);
             constructor.setAccessible(true);
-            return constructor.newInstance(name, plugin);
+            PluginCommand command = constructor.newInstance(name, plugin);
+            
+            // 命令已经在构造函数中正确设置了 owningPlugin
+            // 验证插件引用是否正确
+            if (command.getPlugin() != plugin) {
+                LOGGER.warning("命令 " + name + " 的插件引用不匹配，尝试使用 Unsafe 修复");
+                
+                // 使用 Unsafe 来修改 final 字段
+                try {
+                    Field theUnsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+                    theUnsafeField.setAccessible(true);
+                    sun.misc.Unsafe unsafe = (sun.misc.Unsafe) theUnsafeField.get(null);
+                    
+                    Field owningPluginField = PluginCommand.class.getDeclaredField("owningPlugin");
+                    long offset = unsafe.objectFieldOffset(owningPluginField);
+                    unsafe.putObject(command, offset, plugin);
+                    
+                    LOGGER.info("使用 Unsafe 修复命令 " + name + " 的 owningPlugin");
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING, "无法使用 Unsafe 修改 owningPlugin: " + ex.getMessage());
+                }
+            }
+            
+            return command;
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "无法创建命令: " + name, e);
             return null;
