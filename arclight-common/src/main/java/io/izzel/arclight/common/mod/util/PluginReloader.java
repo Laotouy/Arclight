@@ -90,9 +90,48 @@ public class PluginReloader {
         String pluginName = plugin.getName();
         SimplePluginManager pluginManager = (SimplePluginManager) Bukkit.getPluginManager();
 
-        // 取消所有任务调度器任务
+        // 取消所有任务调度器任务（包括异步任务）
         Bukkit.getScheduler().cancelTasks(plugin);
         LOGGER.info("已取消插件 " + pluginName + " 的所有任务调度器任务");
+        
+        // 等待异步任务完成
+        try {
+            // 通过反射获取异步任务执行器
+            java.lang.reflect.Field asyncSchedulerField = Bukkit.getScheduler().getClass().getDeclaredField("asyncScheduler");
+            asyncSchedulerField.setAccessible(true);
+            Object asyncScheduler = asyncSchedulerField.get(Bukkit.getScheduler());
+            
+            if (asyncScheduler != null) {
+                // 获取任务映射
+                java.lang.reflect.Field runnersField = asyncScheduler.getClass().getDeclaredField("runners");
+                runnersField.setAccessible(true);
+                Object runners = runnersField.get(asyncScheduler);
+                
+                if (runners instanceof java.util.Map) {
+                    java.util.Map<?, ?> runnerMap = (java.util.Map<?, ?>) runners;
+                    int taskCount = 0;
+                    
+                    // 统计该插件的任务
+                    for (Object runner : runnerMap.values()) {
+                        java.lang.reflect.Field ownerField = runner.getClass().getDeclaredField("owner");
+                        ownerField.setAccessible(true);
+                        Plugin taskOwner = (Plugin) ownerField.get(runner);
+                        if (taskOwner == plugin) {
+                            taskCount++;
+                        }
+                    }
+                    
+                    if (taskCount > 0) {
+                        LOGGER.info("等待 " + taskCount + " 个异步任务完成...");
+                        Thread.sleep(500); // 等待500ms让异步任务完成
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // 如果反射失败，至少等待一段时间
+            LOGGER.info("等待异步任务完成...");
+            Thread.sleep(200);
+        }
 
         // 禁用插件（这也会调用 plugin.onDisable()）
         pluginManager.disablePlugin(plugin);
@@ -234,18 +273,7 @@ public class PluginReloader {
         Bukkit.getServicesManager().unregisterAll(plugin);
         LOGGER.info("已注销插件 " + pluginName + " 的所有服务");
 
-        // 关闭类加载器
-        if (plugin.getClass().getClassLoader() instanceof URLClassLoader) {
-            try {
-                URLClassLoader classLoader = (URLClassLoader) plugin.getClass().getClassLoader();
-                classLoader.close();
-                LOGGER.info("已关闭插件 " + pluginName + " 的类加载器");
-            } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Failed to close class loader", e);
-            }
-        }
-
-        // 清理桥接类加载器的特殊状态
+        // 先清理桥接类加载器的特殊状态（在关闭前）
         if (plugin.getClass().getClassLoader() instanceof PluginClassLoaderBridge) {
             try {
                 PluginClassLoaderBridge bridge = (PluginClassLoaderBridge) plugin.getClass().getClassLoader();
@@ -254,6 +282,23 @@ public class PluginReloader {
                 LOGGER.info("已重置插件 " + pluginName + " 的桥接类加载器状态");
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "无法重置桥接类加载器: " + pluginName, e);
+            }
+        }
+
+        // 等待一小段时间，确保所有异步任务完成
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException ignored) {
+        }
+
+        // 最后关闭类加载器
+        if (plugin.getClass().getClassLoader() instanceof URLClassLoader) {
+            try {
+                URLClassLoader classLoader = (URLClassLoader) plugin.getClass().getClassLoader();
+                classLoader.close();
+                LOGGER.info("已关闭插件 " + pluginName + " 的类加载器");
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Failed to close class loader", e);
             }
         }
 
