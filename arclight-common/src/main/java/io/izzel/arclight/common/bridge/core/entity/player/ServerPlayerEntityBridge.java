@@ -53,6 +53,8 @@ public interface ServerPlayerEntityBridge extends PlayerEntityBridge {
 
     void arclight$readDeathEvent(PlayerDeathEvent event);
 
+    long bridge$getPlayerTime();
+
     interface RespawnPosAngleBridge {
 
         boolean bridge$isBedSpawn();

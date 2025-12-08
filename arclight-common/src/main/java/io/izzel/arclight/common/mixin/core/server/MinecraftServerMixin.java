@@ -4,6 +4,7 @@ import com.mojang.datafixers.DataFixer;
 import io.izzel.arclight.api.ArclightVersion;
 import io.izzel.arclight.common.bridge.bukkit.CraftServerBridge;
 import io.izzel.arclight.common.bridge.core.command.CommandSourceBridge;
+import io.izzel.arclight.common.bridge.core.entity.player.ServerPlayerEntityBridge;
 import io.izzel.arclight.common.bridge.core.server.MinecraftServerBridge;
 import io.izzel.arclight.common.bridge.core.world.WorldBridge;
 import io.izzel.arclight.common.mod.ArclightConstants;
@@ -30,6 +31,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.LayeredRegistryAccess;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
 import net.minecraft.network.protocol.status.ServerStatus;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -42,6 +44,7 @@ import net.minecraft.server.WorldLoader;
 import net.minecraft.server.WorldStem;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.progress.ChunkProgressListener;
 import net.minecraft.server.level.progress.ChunkProgressListenerFactory;
 import net.minecraft.server.packs.repository.PackRepository;
@@ -81,6 +84,7 @@ import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
@@ -475,6 +479,22 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
         ArclightConstants.currentTick = (int) (System.currentTimeMillis() / 50);
         this.server.getScheduler().mainThreadHeartbeat(this.tickCount);
         this.bridge$drainQueuedTasks();
+        // CraftBukkit - Send time updates to everyone, it will get the right time from the world the player is in.
+        if (this.tickCount % 20 == 0) {
+            for (ServerPlayer player : this.getPlayerList().getPlayers()) {
+                player.connection.send(new ClientboundSetTimePacket(
+                    player.level().getGameTime(),
+                    ((ServerPlayerEntityBridge) player).bridge$getPlayerTime(),
+                    player.level().getGameRules().getBoolean(GameRules.RULE_DAYLIGHT)
+                ));
+            }
+        }
+    }
+
+    // CraftBukkit - Drop global time updates, replaced with per-player time above
+    @Redirect(method = "tickChildren", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;synchronizeTime(Lnet/minecraft/server/level/ServerLevel;)V"))
+    private void arclight$cancelSynchronizeTime(MinecraftServer instance, ServerLevel level) {
+        // Do nothing - time sync is now handled per-player in arclight$runScheduler
     }
 
     @Inject(method = "stopServer", at = @At(value = "INVOKE", shift = At.Shift.AFTER, target = "Lnet/minecraft/server/MinecraftServer;saveAllChunks(ZZZ)Z"))
