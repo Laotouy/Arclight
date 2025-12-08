@@ -28,7 +28,7 @@ public class WatchdogThreadMixin extends Thread {
         if (instance != null) instance.interrupt();
     }
 
-    @Inject(method = "<init>", at = @At("CTOR_HEAD"))
+    @Inject(method = "<init>", at = @At(value = "RETURN"))
     private void arclight$setDaemon(long timeoutTime, boolean restart, CallbackInfo ci) {
         setDaemon(true);
     }
