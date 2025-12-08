@@ -7,6 +7,7 @@ import io.izzel.arclight.common.mod.server.ArclightServer;
 import io.izzel.arclight.forge.mod.util.DelegatedContainer;
 import io.izzel.arclight.mixin.Decorate;
 import io.izzel.arclight.mixin.DecorationOps;
+import io.izzel.arclight.mixin.Local;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
@@ -44,7 +45,17 @@ public abstract class VanillaInventoryCodeHooksMixin {
         }
     }
 
-    @Decorate(method = {"lambda$dropperInsertHook$1", "lambda$insertHook$2", "lambda$insertCrafterOutput$3"}, at = @At(value = "INVOKE", target = "Lnet/minecraftforge/items/VanillaInventoryCodeHooks;putStackInInventoryAllSlots(Lnet/minecraft/world/level/block/entity/BlockEntity;Ljava/lang/Object;Lnet/minecraftforge/items/IItemHandler;Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/item/ItemStack;"))
+    @Decorate(method = "insertHook", at = @At(value = "INVOKE", target = "Lnet/minecraftforge/items/VanillaInventoryCodeHooks;getItemHandler(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/level/block/entity/Hopper;Lnet/minecraft/core/Direction;)Ljava/util/Optional;"))
+    private static Optional<Pair<IItemHandler, Object>> arclight$searchTo(Level level, Hopper hopper, Direction direction) throws Throwable {
+        final var handler = (Optional<Pair<IItemHandler, Object>>) DecorationOps.callsite().invoke(level, hopper, direction);
+        final var pos = BlockPos.containing(hopper.getLevelX(), hopper.getLevelY(), hopper.getLevelZ());
+        final var hopperBlock = CraftBlock.at(level, pos);
+        final var searchBlock = CraftBlock.at(level, pos.relative(direction));
+        final var container = handler.map(DelegatedContainer::new).orElse(null);
+        return arclight$runHopperInventorySearchEvent(container, hopperBlock, searchBlock, HopperInventorySearchEvent.ContainerType.DESTINATION);
+    }
+
+    @Decorate(method = {"dropperInsertHook", "insertHook"}, at = @At(value = "INVOKE", target = "Lnet/minecraftforge/items/VanillaInventoryCodeHooks;putStackInInventoryAllSlots(Lnet/minecraft/world/level/block/entity/BlockEntity;Ljava/lang/Object;Lnet/minecraftforge/items/IItemHandler;Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/item/ItemStack;"))
     private static ItemStack arclight$sourceInitiatedMoveItem(BlockEntity source, Object destination, IItemHandler instance, ItemStack stack) throws Throwable {
         if (!stack.isEmpty()) {
             CraftItemStack original = CraftItemStack.asCraftMirror(stack);
@@ -66,14 +77,26 @@ public abstract class VanillaInventoryCodeHooksMixin {
         return (ItemStack) DecorationOps.callsite().invoke(source, destination, instance, stack);
     }
 
-    @Decorate(method = "lambda$extractHook$0", at = @At(value = "INVOKE", ordinal = 0, target = "Lnet/minecraftforge/items/IItemHandler;extractItem(IIZ)Lnet/minecraft/world/item/ItemStack;"))
-    private static ItemStack arclight$nonSourceInitiatedMoveItem(IItemHandler instance, int slot, int expected, boolean simulate, Hopper hopper, Pair<IItemHandler, Object> sourcePair) throws Throwable {
+    @Decorate(method = "extractHook", at = @At(value = "INVOKE", target = "Lnet/minecraftforge/items/VanillaInventoryCodeHooks;getItemHandler(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/level/block/entity/Hopper;Lnet/minecraft/core/Direction;)Ljava/util/Optional;"))
+    private static Optional<Pair<IItemHandler, Object>> arclight$searchFrom(Level level, Hopper hopper, Direction direction, @Local(allocate = "arclight$destination") Object dest) throws Throwable {
+        final var handler = (Optional<Pair<IItemHandler, Object>>) DecorationOps.callsite().invoke(level, hopper, direction);
+        final var pos = BlockPos.containing(hopper.getLevelX(), hopper.getLevelY(), hopper.getLevelZ());
+        final var hopperBlock = CraftBlock.at(level, pos);
+        final var containerBlock = CraftBlock.at(level, pos.relative(direction));
+        final var container = handler.map(DelegatedContainer::new).orElse(null);
+        final var newHandler = arclight$runHopperInventorySearchEvent(container, hopperBlock, containerBlock, HopperInventorySearchEvent.ContainerType.SOURCE);
+        dest = newHandler.map(Pair::getRight).orElse(null);
+        DecorationOps.blackhole().invoke(dest);
+        return newHandler;
+    }
+
+    @Decorate(method = "extractHook", at = @At(value = "INVOKE", ordinal = 0, target = "Lnet/minecraftforge/items/IItemHandler;extractItem(IIZ)Lnet/minecraft/world/item/ItemStack;"))
+    private static ItemStack arclight$nonSourceInitiatedMoveItem(IItemHandler instance, int slot, int expected, boolean simulate, Level unused, Hopper hopper, @Local(allocate = "arclight$destination") Object destination) throws Throwable {
         Preconditions.checkArgument(simulate, "Should be injected at simulate=true");
         ItemStack stack = (ItemStack) DecorationOps.callsite().invoke(instance, slot, expected, simulate);
         if (stack.isEmpty()) {
             return stack;
         }
-        Object destination = sourcePair.getRight();
         CraftItemStack original = CraftItemStack.asCraftMirror(stack);
         Inventory sourceInventory = DelegatedContainer.getOwnerInventory(destination, instance);
 
@@ -96,26 +119,6 @@ public abstract class VanillaInventoryCodeHooksMixin {
         Bukkit.getServer().getPluginManager().callEvent(event);
         CraftInventory craftInventory = (CraftInventory) event.getInventory();
         return Optional.ofNullable(DelegatedContainer.makeItemHandlerPair(craftInventory));
-    }
-
-    @Decorate(method = "insertHook", at = @At(value = "INVOKE", target = "Lnet/minecraftforge/items/VanillaInventoryCodeHooks;getItemHandler(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/level/block/entity/Hopper;Lnet/minecraft/core/Direction;)Ljava/util/Optional;"))
-    private static Optional<Pair<IItemHandler, Object>> arclight$searchTo(Level level, Hopper hopper, Direction direction) throws Throwable {
-        final var handler = (Optional<Pair<IItemHandler, Object>>) DecorationOps.callsite().invoke(level, hopper, direction);
-        final var pos = BlockPos.containing(hopper.getLevelX(), hopper.getLevelY(), hopper.getLevelZ());
-        final var hopperBlock = CraftBlock.at(level, pos);
-        final var searchBlock = CraftBlock.at(level, pos.relative(direction));
-        final var container = handler.map(DelegatedContainer::new).orElse(null);
-        return arclight$runHopperInventorySearchEvent(container, hopperBlock, searchBlock, HopperInventorySearchEvent.ContainerType.DESTINATION);
-    }
-
-    @Decorate(method = "extractHook", at = @At(value = "INVOKE", target = "Lnet/minecraftforge/items/VanillaInventoryCodeHooks;getItemHandler(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/level/block/entity/Hopper;Lnet/minecraft/core/Direction;)Ljava/util/Optional;"))
-    private static Optional<Pair<IItemHandler, Object>> arclight$searchFrom(Level level, Hopper hopper, Direction direction) throws Throwable {
-        final var handler = (Optional<Pair<IItemHandler, Object>>) DecorationOps.callsite().invoke(level, hopper);
-        final var pos = BlockPos.containing(hopper.getLevelX(), hopper.getLevelY(), hopper.getLevelZ());
-        final var hopperBlock = CraftBlock.at(level, pos);
-        final var containerBlock = CraftBlock.at(level, pos.relative(direction));
-        final var container = handler.map(DelegatedContainer::new).orElse(null);
-        return arclight$runHopperInventorySearchEvent(container, hopperBlock, containerBlock, HopperInventorySearchEvent.ContainerType.SOURCE);
     }
 
 }
