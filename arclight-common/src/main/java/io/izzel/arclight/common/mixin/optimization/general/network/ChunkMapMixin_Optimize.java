@@ -25,8 +25,30 @@ import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * ChunkMap 实体追踪器优化
+ *
+ * <p>此优化通过延迟批量更新（dirty 标记机制）减少玩家移动时的实体追踪更新次数：
+ * <ul>
+ *   <li>玩家移动时不立即更新所有追踪器，而是标记为 dirty</li>
+ *   <li>在 tick 时批量处理 dirty 玩家，只更新必要的实体</li>
+ *   <li>使用 fastutil ReferenceOpenHashSet 替换 Guava IdentityHashSet</li>
+ * </ul>
+ *
+ * <p><b>禁用条件：</b>
+ * <ul>
+ *   <li><b>Immersive Portals</b>: 该模组有自己的实体追踪逻辑，会产生冲突</li>
+ *   <li><b>Lithium/Canary/Radium</b>: 这些性能优化模组对 ChunkMap 有更成熟的优化实现，
+ *       使用事件驱动的实体追踪系统。当两者同时作用时，会导致 entityMap 在迭代时被并发修改，
+ *       由于 fastutil 的 Int2ObjectOpenHashMap 不实现 fail-fast 机制，不会抛出
+ *       ConcurrentModificationException，而是导致迭代器内部状态损坏，
+ *       最终表现为 NullPointerException: "this.wrapped" is null</li>
+ * </ul>
+ *
+ * @see <a href="https://github.com/CaffeineMC/lithium">Lithium</a>
+ */
 @Mixin(ChunkMap.class)
-@LoadIfMod(modid = ModIds.IMMERSIVE_PORTALS, condition = LoadIfMod.ModCondition.ABSENT)
+@LoadIfMod(modid = {ModIds.IMMERSIVE_PORTALS, ModIds.LITHIUM, ModIds.CANARY, ModIds.RADIUM}, condition = LoadIfMod.ModCondition.ABSENT)
 public class ChunkMapMixin_Optimize {
 
     // @formatter:off
