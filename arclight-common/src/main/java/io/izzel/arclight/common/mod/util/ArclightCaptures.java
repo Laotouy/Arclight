@@ -370,16 +370,18 @@ public class ArclightCaptures {
 
     private static BlockPos spreadPos;
 
-    public static void captureSpreadSource(BlockPos source) {
+    public static BlockPos captureSpreadSource(BlockPos source) {
+        BlockPos old = spreadPos;
         spreadPos = source.immutable();
+        return old;
     }
 
     public static BlockPos getSpreadPos() {
         return spreadPos;
     }
 
-    public static void resetSpreadSource() {
-        spreadPos = null;
+    public static void resetSpreadSource(BlockPos old, BlockPos now) {
+        if (spreadPos == now) spreadPos = old;
     }
 
     private static boolean playerInteractCancelled;

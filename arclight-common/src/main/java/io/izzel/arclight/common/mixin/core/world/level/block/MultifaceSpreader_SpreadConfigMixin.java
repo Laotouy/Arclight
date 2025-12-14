@@ -1,6 +1,7 @@
 package io.izzel.arclight.common.mixin.core.world.level.block;
 
-import io.izzel.arclight.common.mod.util.ArclightCaptures;
+import io.izzel.arclight.common.bridge.core.world.level.block.MultifaceSpreaderSpreadPosBridge;
+import io.izzel.arclight.common.mod.server.ArclightServer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.BlockGetter;
@@ -32,8 +33,13 @@ public interface MultifaceSpreader_SpreadConfigMixin {
             if (p_221705_) {
                 level.getChunk(spreadPos.pos()).markPosForPostprocessing(spreadPos.pos());
             }
-
-            return CraftEventFactory.handleBlockSpreadEvent(level, ArclightCaptures.getSpreadPos(), spreadPos.pos(), blockstate, 2);
+            BlockPos source = ((MultifaceSpreaderSpreadPosBridge)(Object) spreadPos).source();
+            if (source != null) {
+                return CraftEventFactory.handleBlockSpreadEvent(level, source, spreadPos.pos(), blockstate, 2);
+            } else {
+                ArclightServer.LOGGER.debug("FIXME: unknown source for spread pos");
+                return level.setBlock(spreadPos.pos(), blockstate, 2);
+            }
         } else {
             return false;
         }

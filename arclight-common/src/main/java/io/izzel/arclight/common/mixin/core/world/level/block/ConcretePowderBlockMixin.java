@@ -31,12 +31,14 @@ public abstract class ConcretePowderBlockMixin extends FallingBlockMixin {
 
     @Decorate(method = "onLand", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z"))
     public boolean arclight$blockForm(Level world, BlockPos pos, BlockState newState, int flags) throws Throwable {
-        final var event = ArclightEventFactory.callBlockFormEvent(((IWorldBridge) world).bridge$getMinecraftWorld(), pos, newState, flags, null);
-        if (event != null) {
-            if (event.isCancelled()) {
-                return false;
+        if (IWorldBridge.from(world) instanceof IWorldBridge bridge) {
+            final var event = ArclightEventFactory.callBlockFormEvent(bridge.bridge$getMinecraftWorld(), pos, newState, flags, null);
+            if (event != null) {
+                if (event.isCancelled()) {
+                    return false;
+                }
+                newState = ((CraftBlockState) event.getNewState()).getHandle();
             }
-            newState = ((CraftBlockState) event.getNewState()).getHandle();
         }
         return (boolean) DecorationOps.callsite().invoke(world, pos, newState, flags);
     }

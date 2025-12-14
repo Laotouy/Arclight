@@ -22,12 +22,14 @@ public class LiquidBlockMixin {
 
     @Decorate(method = "shouldSpreadLiquid", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;setBlockAndUpdate(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)Z"))
     public boolean arclight$blockForm(Level world, BlockPos pos, BlockState newState) throws Throwable {
-        final var event = ArclightEventFactory.callBlockFormEvent(((IWorldBridge) world).bridge$getMinecraftWorld(), pos, newState, 3, null);
-        if (event != null) {
-            if (event.isCancelled()) {
-                return false;
+        if (IWorldBridge.from(world) instanceof IWorldBridge bridge) {
+            final var event = ArclightEventFactory.callBlockFormEvent(bridge.bridge$getMinecraftWorld(), pos, newState, 3, null);
+            if (event != null) {
+                if (event.isCancelled()) {
+                    return false;
+                }
+                newState = ((CraftBlockState) event.getNewState()).getHandle();
             }
-            newState = ((CraftBlockState) event.getNewState()).getHandle();
         }
         return arclight$fizz = (boolean) DecorationOps.callsite().invoke(world, pos, newState);
     }

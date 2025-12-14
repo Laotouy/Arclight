@@ -2,11 +2,10 @@ package io.izzel.arclight.common.mixin.vanilla.world.item;
 
 import com.llamalad7.mixinextras.sugar.Local;
 import io.izzel.arclight.common.bridge.core.entity.player.ServerPlayerEntityBridge;
+import io.izzel.arclight.common.bridge.core.world.IWorldBridge;
 import io.izzel.arclight.common.bridge.core.world.item.BucketItemBridge;
-import io.izzel.arclight.common.mod.util.DistValidate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
@@ -34,11 +33,8 @@ public abstract class BucketItemMixin_Vanilla implements BucketItemBridge {
 
     @Inject(method = "emptyContents", require = 0, cancellable = true, at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/dimension/DimensionType;ultraWarm()Z"))
     private void arclight$bucketEmpty(Player player, Level worldIn, BlockPos posIn, BlockHitResult rayTrace, CallbackInfoReturnable<Boolean> cir) {
-        if (!DistValidate.isValid(worldIn)) {
-            return;
-        }
-        if (player != null && arclight$getStack() != null) {
-            PlayerBucketEmptyEvent event = CraftEventFactory.callPlayerBucketEmptyEvent((ServerLevel) worldIn, player, posIn, arclight$getClick(), arclight$getDirection(), arclight$getStack(), arclight$getHand() == null ? InteractionHand.MAIN_HAND : arclight$getHand());
+        if (IWorldBridge.from(worldIn) instanceof IWorldBridge bridge && player != null && arclight$getStack() != null) {
+            PlayerBucketEmptyEvent event = CraftEventFactory.callPlayerBucketEmptyEvent(bridge.bridge$getMinecraftWorld(), player, posIn, arclight$getClick(), arclight$getDirection(), arclight$getStack(), arclight$getHand() == null ? InteractionHand.MAIN_HAND : arclight$getHand());
             if (event.isCancelled()) {
                 ((ServerPlayer) player).connection.send(new ClientboundBlockUpdatePacket(worldIn, posIn));
                 ((ServerPlayerEntityBridge) player).bridge$getBukkitEntity().updateInventory();

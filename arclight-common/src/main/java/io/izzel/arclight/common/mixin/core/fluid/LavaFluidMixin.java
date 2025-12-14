@@ -88,13 +88,15 @@ public abstract class LavaFluidMixin implements LavaFluidBridge {
 
     @Decorate(method = "spreadTo", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/LevelAccessor;setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z"))
     private boolean arclight$blockFromTo(LevelAccessor world, BlockPos pos, BlockState newState, int flags) throws Throwable {
-        // Already checked in callBlockFormEvent
-        final var event = ArclightEventFactory.callBlockFormEvent(((IWorldBridge) world).bridge$getMinecraftWorld(), pos, newState, flags, null);
-        if (event != null) {
-            if (event.isCancelled()) {
-                return (boolean) DecorationOps.cancel().invoke();
+        if (IWorldBridge.from(world) instanceof IWorldBridge bridge) {
+            // Already checked in callBlockFormEvent
+            final var event = ArclightEventFactory.callBlockFormEvent(bridge.bridge$getMinecraftWorld(), pos, newState, flags, null);
+            if (event != null) {
+                if (event.isCancelled()) {
+                    return (boolean) DecorationOps.cancel().invoke();
+                }
+                newState = ((CraftBlockState) event.getNewState()).getHandle();
             }
-            newState = ((CraftBlockState) event.getNewState()).getHandle();
         }
         return (boolean) DecorationOps.callsite().invoke(world, pos, newState, flags);
     }
