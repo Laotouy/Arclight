@@ -46,7 +46,7 @@ public class SpigotBuilder implements Runnable {
     @Getter
     @Setter
     @Nullable
-    private Integer reversion = null;
+    private String reversion = null;
 
     /**
      * The specific commit refs.
@@ -113,7 +113,7 @@ public class SpigotBuilder implements Runnable {
 
             var rev = minecraftVersion;
             if (reversion != null) {
-                rev = reversion.toString();
+                rev = reversion;
             }
 
             if (extension == null) {

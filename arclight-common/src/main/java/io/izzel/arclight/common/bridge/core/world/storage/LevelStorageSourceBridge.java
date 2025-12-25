@@ -3,12 +3,13 @@ package io.izzel.arclight.common.bridge.core.world.storage;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.storage.LevelStorageSource;
+import net.minecraft.world.level.validation.ContentValidationException;
 
 import java.io.IOException;
 
 public interface LevelStorageSourceBridge {
 
-    LevelStorageSource.LevelStorageAccess bridge$getLevelSave(String saveName, ResourceKey<LevelStem> world) throws IOException;
+    LevelStorageSource.LevelStorageAccess arclight$validateAndCreateAccess(String saveName, ResourceKey<LevelStem> world) throws IOException, ContentValidationException;
 
     interface LevelStorageAccessBridge {
 

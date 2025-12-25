@@ -24,4 +24,9 @@ public abstract class GameRules_BooleanValueMixin extends GameRules_ValueMixin<G
     public void setFrom(GameRules.BooleanValue value, ServerLevel level) {
         set(value.get(), level);
     }
+
+    @Override
+    public void arclight$set(Object value, @org.jetbrains.annotations.Nullable ServerLevel level) {
+        this.set((boolean) value, level);
+    }
 }

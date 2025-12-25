@@ -110,7 +110,9 @@ public abstract class LevelMixin implements WorldBridge, LevelAccessor, LevelWri
         this.biomeProvider = biomeProvider;
     }
 
-    @Inject(method = "<init>", at = @At("CTOR_HEAD"))
+    @SuppressWarnings({"DefaultAnnotationParam", "UnnecessaryUnsafe"})
+    // InitAuther97: unsafe = true can't be removed because unsafe is default to false on Forge
+    @Inject(method = "<init>", at = @At(value = "CTOR_HEAD", unsafe = true))
     private void arclight$preInit(WritableLevelData writableLevelData, ResourceKey resourceKey, RegistryAccess registryAccess, Holder holder, Supplier supplier, boolean bl, boolean bl2, long l, int i, CallbackInfo ci) {
         this.arclight$isActual = WorldBridge.super.arclight$isActual();
     }

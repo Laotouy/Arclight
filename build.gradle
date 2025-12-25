@@ -82,6 +82,7 @@ rootProject.ext.subProjects.each { Project p ->
         arclight {
             mcVersion = libs.versions.minecraft.get()
             bukkitVersion = libs.versions.bukkit.api.get()
+            spigotReversion = libs.versions.spigot.reversion.get()
             accessTransformer = rootProject.ext.commonProject.file('bukkit.at')
             extraMapping = rootProject.ext.commonProject.file('extra_mapping.tsrg')
         }

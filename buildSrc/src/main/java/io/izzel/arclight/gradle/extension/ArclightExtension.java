@@ -12,7 +12,7 @@ public class ArclightExtension implements IArclightExtension {
     private Path cacheDir;
     private String mcVersion;
     private String bukkitVersion;
-    private Integer spigotRev;
+    private String spigotReversion;
     private File accessTransformer;
     private File extraMapping;
     private final IArclightMappingsExtension mappingsConfiguration = new ArclightMappingsExtension();
@@ -52,13 +52,13 @@ public class ArclightExtension implements IArclightExtension {
     }
 
     @Override
-    public Integer getSpigotReversion() {
-        return spigotRev;
+    public String getSpigotReversion() {
+        return spigotReversion;
     }
 
     @Override
-    public void setSpigotReversion(Integer rev) {
-        spigotRev = rev;
+    public void setSpigotReversion(String rev) {
+        spigotReversion = rev;
     }
 
     @Override

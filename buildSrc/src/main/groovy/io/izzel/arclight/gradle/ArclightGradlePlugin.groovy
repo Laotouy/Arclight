@@ -69,15 +69,17 @@ class ArclightGradlePlugin implements Plugin<Project> {
         def buildMeta = arclight.cacheDir.resolve('spigot_version.json')
         def rev = arclight.mcVersion
         if (arclight.spigotReversion) {
-            rev = arclight.spigotReversion.toString()
+            rev = arclight.spigotReversion
         }
+
+        project.logger.lifecycle("Setup for Spigot ${arclight.mcVersion}(${arclight.spigotReversion})")
         def newBuildMeta = IOUtils.toString(new URI("https://hub.spigotmc.org/versions/${rev}.json").toURL(), StandardCharsets.UTF_8)
         if (Files.exists(buildMeta)) {
             var built = Files.readString(buildMeta)
             if (built == newBuildMeta) {
                 if (arclight.mappingsConfiguration.areMappingsExist()
                         && Files.exists(spigotDeobf)) {
-                    project.logger.lifecycle(":found valid spigot cache for ${rev}, using it")
+                    project.logger.lifecycle(":spigot build cache valid, using it")
                     project.logger.debug(built)
                     return
                 }

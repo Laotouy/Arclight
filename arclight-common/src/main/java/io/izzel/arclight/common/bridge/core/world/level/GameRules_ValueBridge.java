@@ -7,4 +7,5 @@ import javax.annotation.Nullable;
 
 public interface GameRules_ValueBridge<T extends GameRules.Value<T>> {
     void arclight$setFrom(T t, @Nullable ServerLevel level);
+    void arclight$set(Object value, @Nullable ServerLevel level);
 }

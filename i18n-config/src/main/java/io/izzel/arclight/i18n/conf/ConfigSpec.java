@@ -24,6 +24,9 @@ public class ConfigSpec {
     @Setting("velocity")
     private VelocitySpec velocitySpec;
 
+    @Setting("experimental")
+    private ExperimentalSpec experimentalSpec;
+
     public int getVersion() {
         return version;
     }
@@ -46,5 +49,9 @@ public class ConfigSpec {
 
     public VelocitySpec getVelocity() {
         return velocitySpec;
+    }
+
+    public ExperimentalSpec getExperimental() {
+        return experimentalSpec;
     }
 }

@@ -93,7 +93,13 @@ public abstract class PrimaryLevelDataMixin implements WorldInfoBridge {
 
     @Override
     public void bridge$setWorld(ServerLevel world) {
-        this.world = world;
+        setWorld(world);
+    }
+
+    public void setWorld(ServerLevel world) {
+        if (this.world == null) {
+            this.world = world;
+        }
     }
 
     @Override
@@ -105,6 +111,16 @@ public abstract class PrimaryLevelDataMixin implements WorldInfoBridge {
         if (!this.settings.levelName.equals(name)) {
             this.settings.levelName = name;
         }
+    }
+
+    @Override
+    public void arclight$checkName(String name) {
+        checkName(name);
+    }
+
+    @Override
+    public void arclight$offerCustomDimensions(Registry<LevelStem> registry) {
+        this.customDimensions = registry;
     }
 
     @Override

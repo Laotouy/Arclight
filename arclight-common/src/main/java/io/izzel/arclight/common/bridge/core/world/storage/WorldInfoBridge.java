@@ -1,8 +1,10 @@
 package io.izzel.arclight.common.bridge.core.world.storage;
 
 import com.mojang.serialization.Lifecycle;
+import net.minecraft.core.Registry;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.dimension.LevelStem;
 
 public interface WorldInfoBridge {
 
@@ -13,4 +15,8 @@ public interface WorldInfoBridge {
     LevelSettings bridge$getWorldSettings();
 
     Lifecycle bridge$getLifecycle();
+
+    void arclight$checkName(String name);
+
+    void arclight$offerCustomDimensions(Registry<LevelStem> registry);
 }

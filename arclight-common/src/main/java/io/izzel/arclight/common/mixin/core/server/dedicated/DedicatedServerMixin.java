@@ -5,9 +5,15 @@ import io.izzel.arclight.common.mixin.core.server.MinecraftServerMixin;
 import io.izzel.arclight.common.mod.server.ArclightServer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.server.ConsoleInput;
+import net.minecraft.server.WorldLoader;
 import net.minecraft.server.dedicated.DedicatedServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.rcon.RconConsoleSource;
+import net.minecraft.util.datafix.DataFixers;
+import net.minecraft.world.level.storage.LevelStorageSource;
+import net.minecraft.world.level.storage.PrimaryLevelData;
 import org.bukkit.Bukkit;
 import org.bukkit.craftbukkit.v.CraftServer;
 import org.bukkit.craftbukkit.v.command.CraftRemoteConsoleCommandSender;
@@ -143,5 +149,26 @@ public abstract class DedicatedServerMixin extends MinecraftServerMixin implemen
         }
 
         return result.toString();
+    }
+
+    @Override
+    public WorldLoader.DataLoadContext arclight$dataLoadContext() {
+        return this.worldLoader;
+    }
+
+    @Override
+    public void arclight$forceUpgradeIfNeeded(LevelStorageSource.LevelStorageAccess worldSession, RegistryAccess.Frozen dimensions) {
+        if (this.options.has("forceUpgrade")) {
+            net.minecraft.server.Main.forceUpgrade(worldSession, DataFixers.getDataFixer(), this.options.has("eraseCache"), () -> true, dimensions, this.options.has("recreateRegionFiles"));
+        }
+    }
+
+    @Override
+    public void arclight$prepareAndAddLevel(ServerLevel internal, PrimaryLevelData levelData) {
+        this.initWorld(internal, levelData, levelData, levelData.worldGenOptions());
+        internal.setSpawnSettings(true, true);
+        this.addLevel(internal);
+        this.prepareLevels(internal.getChunkSource().chunkMap.progressListener, internal);
+        internal.entityManager.tick();
     }
 }
