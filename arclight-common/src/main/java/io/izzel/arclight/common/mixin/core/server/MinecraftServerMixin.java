@@ -458,7 +458,7 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
         this.bridge$drainQueuedTasks();
         // CraftBukkit - Send time updates to everyone, it will get the right time from the world the player is in.
         if (this.tickCount % 20 == 0) {
-            for (ServerPlayer player : this.getPlayerList().getPlayers()) {
+            for (ServerPlayer player : this.playerList.getPlayers()) {
                 player.connection.send(new ClientboundSetTimePacket(
                     player.level().getGameTime(),
                     ((ServerPlayerEntityBridge) player).bridge$getPlayerTime(),
