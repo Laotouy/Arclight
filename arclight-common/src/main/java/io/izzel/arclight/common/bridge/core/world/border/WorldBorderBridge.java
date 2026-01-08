@@ -7,4 +7,6 @@ public interface WorldBorderBridge {
     Level bridge$getWorld();
 
     void bridge$setWorld(Level world);
+
+    void bridge$clearListeners();
 }

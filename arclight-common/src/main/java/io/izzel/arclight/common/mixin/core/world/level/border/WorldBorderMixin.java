@@ -35,4 +35,9 @@ public class WorldBorderMixin implements WorldBorderBridge {
             ci.cancel();
         }
     }
+
+    @Override
+    public void bridge$clearListeners() {
+        this.listeners.clear();
+    }
 }

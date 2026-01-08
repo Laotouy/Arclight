@@ -7,6 +7,8 @@ import io.izzel.arclight.common.bridge.core.command.CommandSourceBridge;
 import io.izzel.arclight.common.bridge.core.entity.player.ServerPlayerEntityBridge;
 import io.izzel.arclight.common.bridge.core.server.MinecraftServerBridge;
 import io.izzel.arclight.common.bridge.core.world.WorldBridge;
+import io.izzel.arclight.common.bridge.core.world.border.WorldBorderBridge;
+import io.izzel.arclight.common.bridge.core.world.storage.WorldInfoBridge;
 import io.izzel.arclight.common.mod.ArclightConstants;
 import io.izzel.arclight.common.mod.mixins.annotation.TransformAccess;
 import io.izzel.arclight.common.mod.server.ArclightServer;
@@ -445,10 +447,27 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     }
 
     public void removeLevel(ServerLevel level) {
+        this.arclight$removeLevel(level);
+    }
+
+    @Override
+    public void arclight$removeLevel(ServerLevel level) {
         this.levels.remove(level.dimension());
         this.arclight$onServerUnload(level);
         this.bridge$forge$markLevelsDirty();
         ((CraftServerBridge) Bukkit.getServer()).bridge$removeWorld(level);
+
+        // Clear the reverse reference from PrimaryLevelData to ServerLevel to prevent memory leak
+        net.minecraft.world.level.storage.LevelData levelData = level.getLevelData();
+        if (levelData instanceof WorldInfoBridge bridge) {
+            bridge.bridge$clearWorld();
+        }
+
+        // Clear WorldBorder listeners to prevent memory leak
+        var worldBorder = level.getWorldBorder();
+        if (worldBorder instanceof WorldBorderBridge borderBridge) {
+            borderBridge.bridge$clearListeners();
+        }
     }
 
     @Inject(method = "tickChildren", at = @At("HEAD"))

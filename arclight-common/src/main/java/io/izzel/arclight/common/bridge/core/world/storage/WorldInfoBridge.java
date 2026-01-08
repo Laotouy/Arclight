@@ -19,4 +19,6 @@ public interface WorldInfoBridge {
     void arclight$checkName(String name);
 
     void arclight$offerCustomDimensions(Registry<LevelStem> registry);
+
+    void bridge$clearWorld();
 }

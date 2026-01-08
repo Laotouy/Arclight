@@ -7,6 +7,7 @@ import com.mojang.serialization.Dynamic;
 import com.mojang.serialization.Lifecycle;
 import io.izzel.arclight.common.bridge.bukkit.CraftServerBridge;
 import io.izzel.arclight.common.bridge.core.entity.player.ServerPlayerEntityBridge;
+import io.izzel.arclight.common.bridge.core.server.MinecraftServerBridge;
 import io.izzel.arclight.common.bridge.core.server.dedicated.DedicatedServerBridge;
 import io.izzel.arclight.common.bridge.core.world.level.GameRules_ValueBridge;
 import io.izzel.arclight.common.bridge.core.world.storage.LevelStorageSourceBridge;
@@ -453,17 +454,57 @@ public abstract class CraftServerMixin implements CraftServerBridge {
                 ((GameRules_ValueBridge<GameRules.IntegerValue>)levelData.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS)).arclight$set(0, null);
             }
 
-            this.bridge$offerBiomeProviderCache(name, biomeProvider);
-            this.bridge$offerGeneratorCache(name, generator);
-            this.bridge$offerEnvironmentCache(name, creator.environment());
-            ServerLevel internal = new ServerLevel(this.console, this.console.executor, worldSession, levelData, worldKey, stem, this.getServer().progressListenerFactory.create(levelData.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS)), levelData.isDebugWorld(), j, (List)(creator.environment() == World.Environment.NORMAL ? list : ImmutableList.of()), true, this.console.overworld().getRandomSequences());
-            if (!this.worlds.containsKey(name.toLowerCase(Locale.ROOT))) {
-                return null;
-            } else {
+            ServerLevel internal = null;
+            try {
+                this.bridge$offerBiomeProviderCache(name, biomeProvider);
+                this.bridge$offerGeneratorCache(name, generator);
+                this.bridge$offerEnvironmentCache(name, creator.environment());
+
+                internal = new ServerLevel(this.console, this.console.executor, worldSession, levelData, worldKey, stem, this.getServer().progressListenerFactory.create(levelData.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS)), levelData.isDebugWorld(), j, (List)(creator.environment() == World.Environment.NORMAL ? list : ImmutableList.of()), true, this.console.overworld().getRandomSequences());
+
+                if (!this.worlds.containsKey(name.toLowerCase(Locale.ROOT))) {
+                    throw new IllegalStateException(
+                        "World was not added to worlds map for: " + name + ". This likely means the world " +
+                        "is not a valid ServerLevel (arclight$isActual() returned false). " +
+                        "Please check your world configuration or use a standard world type."
+                    );
+                }
+
                 ((DedicatedServerBridge) this.console).arclight$prepareAndAddLevel(internal, levelData);
                 CraftWorld bukkit = internal.bridge$getWorld();
                 this.pluginManager.callEvent(new WorldLoadEvent(bukkit));
                 return bukkit;
+
+            } catch (Exception e) {
+                // 清理已分配的资源，防止内存泄漏
+                MinecraftServer.LOGGER.error("Failed to create world: " + name, e);
+
+                if (internal != null) {
+                    try {
+                        // 关闭区块系统
+                        internal.getChunkSource().close();
+                        // 从 MinecraftServer 移除已添加的引用
+                        ((MinecraftServerBridge) this.console).arclight$removeLevel(internal);
+                    } catch (Exception cleanupEx) {
+                        MinecraftServer.LOGGER.error("Failed to cleanup ServerLevel after creation failure", cleanupEx);
+                    }
+                }
+
+                if (worldSession != null) {
+                    try {
+                        worldSession.close();
+                    } catch (IOException ioEx) {
+                        MinecraftServer.LOGGER.error("Failed to close world session", ioEx);
+                    }
+                }
+
+                // 清理生成器和生物群系提供者缓存
+                this.generatorCache.remove(name);
+                this.biomeProviderCache.remove(name);
+                this.environmentCache.remove(name);
+
+                // 返回 null 以保持 Bukkit API 兼容性（不抛异常）
+                return null;
             }
         }
     }

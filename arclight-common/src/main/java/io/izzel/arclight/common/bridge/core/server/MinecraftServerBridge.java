@@ -30,6 +30,8 @@ public interface MinecraftServerBridge {
 
     void arclight$onServerUnload(ServerLevel level);
 
+    void arclight$removeLevel(ServerLevel level);
+
     default void bridge$forge$markLevelsDirty() {}
 
     default void bridge$forge$reinstatePersistentChunks(ServerLevel level, ForcedChunksSavedData savedData) {}

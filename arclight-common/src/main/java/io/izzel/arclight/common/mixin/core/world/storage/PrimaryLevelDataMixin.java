@@ -31,6 +31,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.lang.ref.WeakReference;
+
 @Mixin(PrimaryLevelData.class)
 public abstract class PrimaryLevelDataMixin implements WorldInfoBridge {
 
@@ -43,7 +45,7 @@ public abstract class PrimaryLevelDataMixin implements WorldInfoBridge {
     @Shadow @Final private Lifecycle worldGenSettingsLifecycle;
     // @formatter:on
 
-    public ServerLevel world;
+    private WeakReference<ServerLevel> worldRef;
     public Registry<LevelStem> customDimensions;
 
     @Redirect(method = "setTagData", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/levelgen/WorldGenSettings;encode(Lcom/mojang/serialization/DynamicOps;Lnet/minecraft/world/level/levelgen/WorldOptions;Lnet/minecraft/core/RegistryAccess;)Lcom/mojang/serialization/DataResult;"))
@@ -85,9 +87,12 @@ public abstract class PrimaryLevelDataMixin implements WorldInfoBridge {
 
     @Inject(method = "setDifficulty", at = @At("RETURN"))
     private void arclight$sendDiffChange(Difficulty newDifficulty, CallbackInfo ci) {
-        ClientboundChangeDifficultyPacket packet = new ClientboundChangeDifficultyPacket(newDifficulty, this.isDifficultyLocked());
-        for (Player player : this.world.players()) {
-            ((ServerPlayer) player).connection.send(packet);
+        ServerLevel level = this.worldRef != null ? this.worldRef.get() : null;
+        if (level != null) {
+            ClientboundChangeDifficultyPacket packet = new ClientboundChangeDifficultyPacket(newDifficulty, this.isDifficultyLocked());
+            for (Player player : level.players()) {
+                ((ServerPlayer) player).connection.send(packet);
+            }
         }
     }
 
@@ -97,14 +102,19 @@ public abstract class PrimaryLevelDataMixin implements WorldInfoBridge {
     }
 
     public void setWorld(ServerLevel world) {
-        if (this.world == null) {
-            this.world = world;
+        if (world != null && (this.worldRef == null || this.worldRef.get() == null)) {
+            this.worldRef = new WeakReference<>(world);
         }
     }
 
     @Override
     public ServerLevel bridge$getWorld() {
-        return world;
+        return this.worldRef != null ? this.worldRef.get() : null;
+    }
+
+    @Override
+    public void bridge$clearWorld() {
+        this.worldRef = null;
     }
 
     public void checkName(String name) {

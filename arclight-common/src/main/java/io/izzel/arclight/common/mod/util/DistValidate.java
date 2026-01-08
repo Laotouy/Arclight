@@ -10,9 +10,6 @@ import net.minecraft.world.level.LevelAccessor;
 import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.MarkerManager;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 public class DistValidate {
 
     private static final Marker MARKER = MarkerManager.getMarker("EXT_LOGIC");
@@ -37,14 +34,19 @@ public class DistValidate {
             || isLogicWorld(cl);
     }
 
-    private static final Map<Class<?>, Boolean> SEEN_CLASSES = new ConcurrentHashMap<>();
-
-    private static boolean isLogicWorld(Class<?> cl) {
-        return SEEN_CLASSES.computeIfAbsent(cl, c -> {
-            var name = c.getName();
-            var result = ArclightConfig.spec().getCompat().getExtraLogicWorlds().contains(cl.getName());
+    // 使用 ClassValue 替代 ConcurrentHashMap，ClassValue 会在 Class 被 GC 时自动清理值
+    // 这解决了 PluginClassLoader 无法回收的问题
+    private static final ClassValue<Boolean> LOGIC_WORLD_CACHE = new ClassValue<Boolean>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            var name = type.getName();
+            var result = ArclightConfig.spec().getCompat().getExtraLogicWorlds().contains(name);
             ArclightServer.LOGGER.warn(MARKER, "Level class {} treated as logic world: {}", name, result);
             return result;
-        });
+        }
+    };
+
+    private static boolean isLogicWorld(Class<?> cl) {
+        return LOGIC_WORLD_CACHE.get(cl);
     }
 }
